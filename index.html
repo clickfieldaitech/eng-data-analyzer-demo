@@ -657,6 +657,8 @@
                 <input type="range" id="simThickness" min="0.8" max="2.0" step="0.02" value="1.2" oninput="updateSimHydro()"></div>
               <div class="simslider"><label>Bore diameter <b id="simBVal">300 mm</b></label>
                 <input type="range" id="simBore" min="150" max="500" step="10" value="300" oninput="updateSimHydro()"></div>
+              <div class="simslider"><label>Convolutions <b id="simHydroCVal">6</b></label>
+                <input type="range" id="simHydroConvolutions" min="3" max="10" step="1" value="6" oninput="updateSimHydro()"></div>
             </div>
             <div class="field">
               <label>Material (sets the allowable stress limit)</label>
@@ -676,6 +678,10 @@
               <div class="srow"><span>Predicted</span><b class="num" id="simStressOut">—</b></div></div>
             <div class="statcard"><div class="shead"><span class="sname">Axial displacement</span></div>
               <div class="srow"><span>Predicted</span><b class="num" id="simDispOut">—</b></div></div>
+            <div class="statcard"><div class="shead"><span class="sname">Est. weight</span></div>
+              <div class="srow"><span>Predicted</span><b class="num" id="simWeightOut">—</b></div></div>
+            <div class="statcard"><div class="shead"><span class="sname">Est. material cost</span></div>
+              <div class="srow"><span>Predicted</span><b class="num" id="simCostOut">—</b></div></div>
           </div>
           <div class="specresult" id="simSpecResult" style="margin-top:14px"></div>
         </section>
@@ -685,6 +691,7 @@
           <div class="chartbox"><canvas id="simDiagramHydro"></canvas></div>
           <p class="muted" style="font-size:.76rem;margin-top:10px">Live technical drawing — bore diameter and
             wall thickness redraw as you move the sliders. Callout shows predicted hoop stress at the convolution crest.</p>
+          <div class="actionrow"><button class="actbtn primary" onclick="openDrawingReport('hydro')">📐 Generate drawing sheet</button></div>
         </section>
 
         <section class="panel" style="margin-top:18px">
@@ -703,9 +710,19 @@
             <div class="simslider"><label>Displacement target <b id="simDVal">4.00 mm</b></label>
               <input type="range" id="simDisplacement" min="0" max="8" step="0.1" value="4" oninput="updateSimSpring()"></div>
           </div>
-          <div class="field" style="margin-top:12px;max-width:340px">
-            <label>Max allowable force (N) — optional</label>
-            <input class="numinput" type="number" id="simForceLimit" step="any" oninput="updateSimSpring()">
+          <div class="cmp2grid" style="margin-top:12px">
+            <div class="field">
+              <label>Max allowable force (N) — optional</label>
+              <input class="numinput" type="number" id="simForceLimit" step="any" oninput="updateSimSpring()">
+            </div>
+            <div class="field">
+              <label>Material</label>
+              <select id="simSpringMaterial" onchange="updateSimSpring()">
+                <option value="SS316L">SS316L</option>
+                <option value="SS321">SS321</option>
+                <option value="Inconel625">Inconel 625</option>
+              </select>
+            </div>
           </div>
         </section>
 
@@ -716,6 +733,10 @@
               <div class="srow"><span>Predicted</span><b class="num" id="simKOut">—</b></div></div>
             <div class="statcard"><div class="shead"><span class="sname">Force at target displacement</span></div>
               <div class="srow"><span>Predicted</span><b class="num" id="simForceOut">—</b></div></div>
+            <div class="statcard"><div class="shead"><span class="sname">Est. weight</span></div>
+              <div class="srow"><span>Predicted</span><b class="num" id="simSpringWeightOut">—</b></div></div>
+            <div class="statcard"><div class="shead"><span class="sname">Est. material cost</span></div>
+              <div class="srow"><span>Predicted</span><b class="num" id="simSpringCostOut">—</b></div></div>
           </div>
           <div class="specresult" id="simSpringSpecResult" style="margin-top:14px"></div>
         </section>
@@ -725,6 +746,7 @@
           <div class="chartbox"><canvas id="simDiagramSpring"></canvas></div>
           <p class="muted" style="font-size:.76rem;margin-top:10px">Live technical drawing — the number of folds
             matches the convolution slider, and the assembly visibly compresses as displacement increases.</p>
+          <div class="actionrow"><button class="actbtn primary" onclick="openDrawingReport('spring')">📐 Generate drawing sheet</button></div>
         </section>
 
         <section class="panel" style="margin-top:18px">
@@ -2849,10 +2871,23 @@ function openBatchReport(){
 /* ---- design simulator ---- */
 var simMode = 'hydro';
 var SIM_MATERIALS = {
-  SS316L: {label:'SS316L', allowable:137},
-  SS321: {label:'SS321', allowable:145},
-  Inconel625: {label:'Inconel 625', allowable:220}
+  SS316L: {label:'SS316L', allowable:137, density:8000, pricePerKg:450},
+  SS321: {label:'SS321', allowable:145, density:8000, pricePerKg:480},
+  Inconel625: {label:'Inconel 625', allowable:220, density:8440, pricePerKg:3200}
 };
+
+function computeWeightCost(boreMm, wallMm, convolutions, mat){
+  var circumferenceMm = Math.PI * boreMm;
+  var tangentTotalMm = 80;
+  var foldPitchMm = 30;
+  var totalLengthMm = tangentTotalMm + convolutions*foldPitchMm;
+  var developedFactor = 1.7; // folded surface is longer than the straight pitch
+  var volumeMm3 = circumferenceMm * wallMm * totalLengthMm * developedFactor;
+  var volumeM3 = volumeMm3 * 1e-9;
+  var weightKg = volumeM3 * mat.density;
+  var costInr = weightKg * mat.pricePerKg;
+  return {weightKg:weightKg, costInr:costInr};
+}
 
 function openSimScreen(){
   document.getElementById('introScreen').style.display = 'none';
@@ -2887,21 +2922,26 @@ function updateSimHydro(){
   var p = parseFloat(document.getElementById('simPressure').value);
   var t = parseFloat(document.getElementById('simThickness').value);
   var bore = parseFloat(document.getElementById('simBore').value);
+  var convolutions = parseInt(document.getElementById('simHydroConvolutions').value, 10);
   var matKey = document.getElementById('simMaterial').value;
   var mat = SIM_MATERIALS[matKey];
   document.getElementById('simPVal').textContent = p.toFixed(1)+' bar';
   document.getElementById('simTVal').textContent = t.toFixed(2)+' mm';
   document.getElementById('simBVal').textContent = bore.toFixed(0)+' mm';
+  document.getElementById('simHydroCVal').textContent = convolutions;
   var pred = hydroPredict(p, t, bore);
   document.getElementById('simStressOut').textContent = pred.stress.toFixed(1)+' MPa';
   document.getElementById('simDispOut').textContent = pred.disp.toFixed(3)+' mm';
+  var wc = computeWeightCost(bore, t, convolutions, mat);
+  document.getElementById('simWeightOut').textContent = wc.weightKg.toFixed(2)+' kg';
+  document.getElementById('simCostOut').textContent = '₹'+wc.costInr.toLocaleString('en-IN',{maximumFractionDigits:0});
   var pass = pred.stress <= mat.allowable;
   var margin = mat.allowable - pred.stress;
   document.getElementById('simSpecResult').innerHTML =
     '<span class="badge '+(pass?'pass':'fail')+'">'+(pass?'✓ WITHIN LIMIT':'✕ EXCEEDS LIMIT')+'</span>'+
     '<span class="detail">'+mat.label+' allowable: '+mat.allowable+' MPa — margin '+(margin>=0?'+':'')+margin.toFixed(1)+' MPa</span>';
   drawSimHydroChart(p, t, bore, mat);
-  drawBellowsHydroDiagram(t, bore, pred.stress, pass);
+  drawBellowsHydroDiagram(t, bore, convolutions, pred.stress, pass);
 }
 
 function drawSimHydroChart(curP, wallMm, boreMm, mat){
@@ -2964,11 +3004,16 @@ function updateSimSpring(){
   var d = parseFloat(document.getElementById('simDisplacement').value);
   var limitRaw = document.getElementById('simForceLimit').value;
   var limit = limitRaw!=='' ? parseFloat(limitRaw) : null;
+  var matKey = document.getElementById('simSpringMaterial').value;
+  var mat = SIM_MATERIALS[matKey];
   document.getElementById('simCVal').textContent = c;
   document.getElementById('simDVal').textContent = d.toFixed(2)+' mm';
   var pred = springPredict(c, d);
   document.getElementById('simKOut').textContent = pred.k.toFixed(1)+' N/mm';
   document.getElementById('simForceOut').textContent = pred.force.toFixed(1)+' N';
+  var wc = computeWeightCost(300, 1.2, c, mat);
+  document.getElementById('simSpringWeightOut').textContent = wc.weightKg.toFixed(2)+' kg';
+  document.getElementById('simSpringCostOut').textContent = '₹'+wc.costInr.toLocaleString('en-IN',{maximumFractionDigits:0});
   var el = document.getElementById('simSpringSpecResult');
   if (limit===null){ el.innerHTML=''; }
   else {
@@ -3109,7 +3154,7 @@ function drawBellowsProfile(ctx, cssW, geo, colors){
   ctx.setLineDash([]);
 }
 
-function drawBellowsHydroDiagram(wallMm, boreMm, stressVal, pass){
+function drawBellowsHydroDiagram(wallMm, boreMm, convolutions, stressVal, pass){
   var canvas = document.getElementById('simDiagramHydro');
   if (!canvas) return;
   var box = canvas.parentElement;
@@ -3125,7 +3170,7 @@ function drawBellowsHydroDiagram(wallMm, boreMm, stressVal, pass){
   var colors = {};
   ['surface-1','ink-1','ink-muted','good','critical'].forEach(function(v){ colors[v]=css.getPropertyValue('--'+v).trim(); });
 
-  var geo = buildBellowsGeometry(cssW, cssH, {wallMm:wallMm, boreMm:boreMm, convolutions:6});
+  var geo = buildBellowsGeometry(cssW, cssH, {wallMm:wallMm, boreMm:boreMm, convolutions:convolutions});
   drawBellowsProfile(ctx, cssW, geo, colors);
 
   var dimX = geo.padSide + geo.tangentLen*0.45;
@@ -3198,6 +3243,91 @@ function drawBellowsSpringDiagram(convolutions, displacementMm, forceVal, pass){
   ctx.fillStyle = colors['ink-muted']; ctx.font='10px ui-monospace,monospace';
   ctx.textAlign='center'; ctx.textBaseline='top';
   ctx.fillText('compressed '+displacementMm.toFixed(1)+' mm', geo.padSide+totalLen/2, geo.centerY+geo.boreHalf+geo.wallPx+8);
+}
+
+function openDrawingReport(mode){
+  var now = new Date();
+  var dwgNo = 'DWG-2026-' + (Math.abs(hashCode(mode+now.toDateString()+Math.random())) % 9000 + 1000);
+  var canvasId = mode==='hydro' ? 'simDiagramHydro' : 'simDiagramSpring';
+  var chartImg = '';
+  try {
+    var dataUrl = document.getElementById(canvasId).toDataURL('image/png');
+    chartImg = '<img class="rchartimg" src="'+dataUrl+'" alt="Bellows cross-section drawing">';
+  } catch(e){}
+
+  var title, metaPairs, statsRows, summary;
+  if (mode==='hydro'){
+    var p = parseFloat(document.getElementById('simPressure').value);
+    var t = parseFloat(document.getElementById('simThickness').value);
+    var bore = parseFloat(document.getElementById('simBore').value);
+    var conv = parseInt(document.getElementById('simHydroConvolutions').value, 10);
+    var mat = SIM_MATERIALS[document.getElementById('simMaterial').value];
+    var pred = hydroPredict(p, t, bore);
+    var wc = computeWeightCost(bore, t, conv, mat);
+    var pass = pred.stress <= mat.allowable;
+    title = 'Hydrostatic Pressure — Bellows Design';
+    metaPairs = [
+      ['Design pressure', p.toFixed(1)+' bar'], ['Wall thickness', t.toFixed(2)+' mm'],
+      ['Bore diameter', bore.toFixed(0)+' mm'], ['Convolutions', conv], ['Material', mat.label]
+    ];
+    statsRows = [
+      ['Predicted hoop stress', pred.stress.toFixed(1)+' MPa'], ['Allowable stress', mat.allowable+' MPa'],
+      ['Predicted axial displacement', pred.disp.toFixed(3)+' mm'],
+      ['Status', pass?'PASS — within limit':'FAIL — exceeds limit'],
+      ['Estimated weight', wc.weightKg.toFixed(2)+' kg'],
+      ['Estimated material cost', '₹'+wc.costInr.toLocaleString('en-IN',{maximumFractionDigits:0})]
+    ];
+    summary = 'At '+p.toFixed(1)+' bar with a '+t.toFixed(2)+' mm wall and '+bore.toFixed(0)+' mm bore, predicted hoop '+
+      'stress is '+pred.stress.toFixed(1)+' MPa against a '+mat.label+' allowable of '+mat.allowable+' MPa — '+
+      (pass?'within limit.':'exceeds the limit.');
+  } else {
+    var c = parseFloat(document.getElementById('simConvolutions').value);
+    var d = parseFloat(document.getElementById('simDisplacement').value);
+    var limitRaw = document.getElementById('simForceLimit').value;
+    var limit = limitRaw!=='' ? parseFloat(limitRaw) : null;
+    var mat2 = SIM_MATERIALS[document.getElementById('simSpringMaterial').value];
+    var pred2 = springPredict(c, d);
+    var wc2 = computeWeightCost(300, 1.2, c, mat2);
+    var pass2 = limit===null || pred2.force<=limit;
+    title = 'Spring Rate — Bellows Design';
+    metaPairs = [
+      ['Convolutions', c], ['Target displacement', d.toFixed(2)+' mm'], ['Material', mat2.label],
+      ['Force limit', limit!==null ? limit.toFixed(1)+' N' : '— not set']
+    ];
+    statsRows = [
+      ['Predicted spring rate', pred2.k.toFixed(1)+' N/mm'], ['Predicted force at target', pred2.force.toFixed(1)+' N'],
+      ['Status', limit===null ? 'No limit set' : (pass2?'PASS — within limit':'FAIL — exceeds limit')],
+      ['Estimated weight', wc2.weightKg.toFixed(2)+' kg'],
+      ['Estimated material cost', '₹'+wc2.costInr.toLocaleString('en-IN',{maximumFractionDigits:0})]
+    ];
+    summary = 'At '+c+' convolutions, compressed '+d.toFixed(2)+' mm, predicted force is '+pred2.force.toFixed(1)+' N'+
+      (limit!==null ? ' against a limit of '+limit.toFixed(1)+' N — '+(pass2?'within limit.':'exceeds the limit.') : '.');
+  }
+
+  var metaHtml = metaPairs.map(function(pr){ return '<div class="mrow"><span>'+pr[0]+'</span><span>'+pr[1]+'</span></div>'; }).join('');
+  var statsHtml = statsRows.map(function(r){ return '<tr><td>'+r[0]+'</td><td class="num">'+r[1]+'</td></tr>'; }).join('');
+
+  document.getElementById('reportBody').innerHTML =
+    '<div class="rdoc">'+
+      '<div class="rdochead"><div><div class="rtitle">Engineering Design Drawing</div><div class="rsub">'+title+'</div></div>'+
+        '<div class="rid">'+dwgNo+'<br>'+now.toLocaleDateString()+'</div></div>'+
+      '<div class="rmetagrid">'+metaHtml+'</div>'+
+      '<div class="rsectitle">Drawing</div>'+chartImg+
+      '<div class="rsectitle">Predicted performance</div>'+
+      '<table class="rtable"><tbody>'+statsHtml+'</tbody></table>'+
+      '<div class="rsectitle">Summary</div>'+
+      '<p class="rsummary">'+summary+'</p>'+
+      '<div class="rsectitle">Notes</div>'+
+      '<p class="soft" style="min-height:34px">Illustrative parametric estimate for discussion purposes — not a '+
+      'certified engineering calculation. Confirm against EJMA/ASME design procedures before manufacture.</p>'+
+      '<div class="signrow">'+
+        '<div class="signbox">Designed by</div>'+
+        '<div class="signbox">Checked by</div>'+
+        '<div class="signbox">Approved by</div>'+
+      '</div>'+
+      '<div class="rfoot"><span>Generated automatically by MB Engineering Data Analyzer</span><span>'+dwgNo+'</span></div>'+
+    '</div>';
+  document.getElementById('reportModal').classList.add('on');
 }
 
 window.addEventListener('resize', function(){
