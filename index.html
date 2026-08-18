@@ -300,6 +300,7 @@
   .simslider label{display:flex;justify-content:space-between;font-size:.8rem;color:var(--ink-2)}
   .simslider label b{color:var(--ink-1);font-family:ui-monospace,monospace}
   #simChart, #simSpringChart{height:260px}
+  #simDiagramHydro, #simDiagramSpring{height:280px}
 </style>
 
 <div class="viz-root">
@@ -654,6 +655,8 @@
                 <input type="range" id="simPressure" min="0" max="30" step="0.5" value="25" oninput="updateSimHydro()"></div>
               <div class="simslider"><label>Wall thickness <b id="simTVal">1.20 mm</b></label>
                 <input type="range" id="simThickness" min="0.8" max="2.0" step="0.02" value="1.2" oninput="updateSimHydro()"></div>
+              <div class="simslider"><label>Bore diameter <b id="simBVal">300 mm</b></label>
+                <input type="range" id="simBore" min="150" max="500" step="10" value="300" oninput="updateSimHydro()"></div>
             </div>
             <div class="field">
               <label>Material (sets the allowable stress limit)</label>
@@ -675,6 +678,13 @@
               <div class="srow"><span>Predicted</span><b class="num" id="simDispOut">—</b></div></div>
           </div>
           <div class="specresult" id="simSpecResult" style="margin-top:14px"></div>
+        </section>
+
+        <section class="panel" style="margin-top:18px">
+          <div class="panelhead"><h2>Bellows cross-section — this design</h2></div>
+          <div class="chartbox"><canvas id="simDiagramHydro"></canvas></div>
+          <p class="muted" style="font-size:.76rem;margin-top:10px">Live technical drawing — bore diameter and
+            wall thickness redraw as you move the sliders. Callout shows predicted hoop stress at the convolution crest.</p>
         </section>
 
         <section class="panel" style="margin-top:18px">
@@ -708,6 +718,13 @@
               <div class="srow"><span>Predicted</span><b class="num" id="simForceOut">—</b></div></div>
           </div>
           <div class="specresult" id="simSpringSpecResult" style="margin-top:14px"></div>
+        </section>
+
+        <section class="panel" style="margin-top:18px">
+          <div class="panelhead"><h2>Bellows cross-section — this design</h2></div>
+          <div class="chartbox"><canvas id="simDiagramSpring"></canvas></div>
+          <p class="muted" style="font-size:.76rem;margin-top:10px">Live technical drawing — the number of folds
+            matches the convolution slider, and the assembly visibly compresses as displacement increases.</p>
         </section>
 
         <section class="panel" style="margin-top:18px">
@@ -2858,21 +2875,24 @@ function setSimMode(mode){
   if (mode==='hydro') updateSimHydro(); else updateSimSpring();
 }
 
-function hydroPredict(pressureBar, wallMm){
+function hydroPredict(pressureBar, wallMm, boreMm){
   var pMPa = pressureBar/10;
-  var stress = pMPa * 300 / (2*wallMm) * 0.404;
-  var disp = Math.pow(pressureBar,1.04) * 0.0168 * (1.2/wallMm);
+  var bore = boreMm || 300;
+  var stress = pMPa * bore / (2*wallMm) * 0.404;
+  var disp = Math.pow(pressureBar,1.04) * 0.0168 * (1.2/wallMm) * (bore/300);
   return {stress:stress, disp:disp};
 }
 
 function updateSimHydro(){
   var p = parseFloat(document.getElementById('simPressure').value);
   var t = parseFloat(document.getElementById('simThickness').value);
+  var bore = parseFloat(document.getElementById('simBore').value);
   var matKey = document.getElementById('simMaterial').value;
   var mat = SIM_MATERIALS[matKey];
   document.getElementById('simPVal').textContent = p.toFixed(1)+' bar';
   document.getElementById('simTVal').textContent = t.toFixed(2)+' mm';
-  var pred = hydroPredict(p, t);
+  document.getElementById('simBVal').textContent = bore.toFixed(0)+' mm';
+  var pred = hydroPredict(p, t, bore);
   document.getElementById('simStressOut').textContent = pred.stress.toFixed(1)+' MPa';
   document.getElementById('simDispOut').textContent = pred.disp.toFixed(3)+' mm';
   var pass = pred.stress <= mat.allowable;
@@ -2880,10 +2900,11 @@ function updateSimHydro(){
   document.getElementById('simSpecResult').innerHTML =
     '<span class="badge '+(pass?'pass':'fail')+'">'+(pass?'✓ WITHIN LIMIT':'✕ EXCEEDS LIMIT')+'</span>'+
     '<span class="detail">'+mat.label+' allowable: '+mat.allowable+' MPa — margin '+(margin>=0?'+':'')+margin.toFixed(1)+' MPa</span>';
-  drawSimHydroChart(p, t, mat);
+  drawSimHydroChart(p, t, bore, mat);
+  drawBellowsHydroDiagram(t, bore, pred.stress, pass);
 }
 
-function drawSimHydroChart(curP, wallMm, mat){
+function drawSimHydroChart(curP, wallMm, boreMm, mat){
   var canvas = document.getElementById('simChart');
   var box = canvas.parentElement;
   var cssW = box.clientWidth, cssH = 260;
@@ -2898,7 +2919,7 @@ function drawSimHydroChart(curP, wallMm, mat){
   var colors = {};
   ['grid','baseline','ink-muted','ink-1','s1','critical'].forEach(function(v){ colors[v]=css.getPropertyValue('--'+v).trim(); });
 
-  var pts = []; for (var p=0; p<=30; p+=0.5){ pts.push({x:p, y:hydroPredict(p,wallMm).stress}); }
+  var pts = []; for (var p=0; p<=30; p+=0.5){ pts.push({x:p, y:hydroPredict(p,wallMm,boreMm).stress}); }
   var yVals = pts.map(function(pt){return pt.y;}).concat([mat.allowable]);
   var yMax = Math.max.apply(null, yVals)*1.1;
 
@@ -2926,7 +2947,7 @@ function drawSimHydroChart(curP, wallMm, mat){
   pts.forEach(function(pt,idx){ var xp=px(pt.x), yp=py(pt.y); if(idx===0) ctx.moveTo(xp,yp); else ctx.lineTo(xp,yp); });
   ctx.stroke();
 
-  var curStress = hydroPredict(curP,wallMm).stress;
+  var curStress = hydroPredict(curP,wallMm,boreMm).stress;
   var mxp=px(curP), myp=py(curStress);
   ctx.fillStyle = curStress<=mat.allowable ? colors['s1'] : colors['critical'];
   ctx.beginPath(); ctx.arc(mxp,myp,5,0,Math.PI*2); ctx.fill();
@@ -2957,6 +2978,8 @@ function updateSimSpring(){
       '<span class="detail">Limit: '+limit.toFixed(1)+' N — margin '+(margin>=0?'+':'')+margin.toFixed(1)+' N</span>';
   }
   drawSimSpringChart(c, d, limit);
+  var forcePass = limit===null || pred.force<=limit;
+  drawBellowsSpringDiagram(c, d, pred.force, forcePass);
 }
 
 function drawSimSpringChart(convolutions, curD, limit){
@@ -3009,6 +3032,172 @@ function drawSimSpringChart(convolutions, curD, limit){
   var mxp=px(curD), myp=py(curForce);
   ctx.fillStyle = (limit===null || curForce<=limit) ? colors['s2'] : colors['critical'];
   ctx.beginPath(); ctx.arc(mxp,myp,5,0,Math.PI*2); ctx.fill();
+}
+
+/* ---- bellows technical-drawing diagrams ---- */
+function arrowHead(ctx, x, y, angle, size, color){
+  ctx.fillStyle = color;
+  ctx.save();
+  ctx.translate(x,y); ctx.rotate(angle);
+  ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(-size,size*0.55); ctx.lineTo(-size,-size*0.55); ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+function dimensionLine(ctx, x1, y1, x2, y2, color){
+  var angle = Math.atan2(y2-y1, x2-x1);
+  ctx.strokeStyle = color; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+  arrowHead(ctx, x1, y1, angle+Math.PI, 5, color);
+  arrowHead(ctx, x2, y2, angle, 5, color);
+}
+
+function buildBellowsGeometry(cssW, cssH, opts){
+  var centerY = cssH/2;
+  var padSide = 40, padTop = 46, padBottom = 46;
+  var plotW = cssW - padSide*2;
+  var plotH = cssH - padTop - padBottom;
+  var boreHalf = Math.max(18, Math.min(plotH*0.28, 18 + (opts.boreMm-150)/(500-150)*36));
+  var wallPx = Math.max(3, 3 + (opts.wallMm-0.8)/(2.0-0.8)*11);
+  var amp = Math.min(plotH*0.42 - boreHalf, 30);
+  var tangentLen = plotW*0.14;
+  var convoluteLenBase = plotW - tangentLen*2;
+  var compressFrac = opts.compressFrac || 0;
+  var convoluteLen = convoluteLenBase * (1-compressFrac);
+  var n = opts.convolutions;
+  var foldW = convoluteLen/n;
+  return {centerY:centerY, padSide:padSide, plotW:plotW, boreHalf:boreHalf, wallPx:wallPx, amp:amp,
+    tangentLen:tangentLen, convoluteLen:convoluteLen, foldW:foldW, n:n};
+}
+
+function outerRadiusAt(x, geo){
+  if (x<geo.tangentLen || x>geo.tangentLen+geo.convoluteLen) return geo.boreHalf;
+  var local = x - geo.tangentLen;
+  var phase = (local/geo.foldW) * Math.PI*2;
+  return geo.boreHalf + geo.amp*(0.5 - 0.5*Math.cos(phase));
+}
+
+function drawBellowsProfile(ctx, cssW, geo, colors){
+  var steps = 220;
+  var topOuter=[], topInner=[], botOuter=[], botInner=[];
+  for (var i=0;i<=steps;i++){
+    var x = geo.padSide + (geo.plotW*i/steps);
+    var r = outerRadiusAt(geo.plotW*i/steps, geo);
+    topOuter.push({x:x, y:geo.centerY-r});
+    topInner.push({x:x, y:geo.centerY-(r-geo.wallPx)});
+    botOuter.push({x:x, y:geo.centerY+r});
+    botInner.push({x:x, y:geo.centerY+(r-geo.wallPx)});
+  }
+  function fillBand(outer, inner){
+    ctx.beginPath();
+    outer.forEach(function(p,i){ if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
+    for (var i=inner.length-1;i>=0;i--){ ctx.lineTo(inner[i].x,inner[i].y); }
+    ctx.closePath();
+    ctx.fillStyle = colors['surface-1'];
+    ctx.fill();
+    ctx.strokeStyle = colors['ink-1']; ctx.lineWidth = 1.2;
+    ctx.stroke();
+    ctx.beginPath();
+    inner.forEach(function(p,i){ if(i===0) ctx.moveTo(p.x,p.y); else ctx.lineTo(p.x,p.y); });
+    ctx.strokeStyle = colors['ink-muted']; ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  fillBand(topOuter, topInner);
+  fillBand(botOuter, botInner);
+
+  ctx.strokeStyle = colors['ink-muted']; ctx.setLineDash([5,4]); ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(geo.padSide, geo.centerY); ctx.lineTo(geo.padSide+geo.plotW, geo.centerY); ctx.stroke();
+  ctx.setLineDash([]);
+}
+
+function drawBellowsHydroDiagram(wallMm, boreMm, stressVal, pass){
+  var canvas = document.getElementById('simDiagramHydro');
+  if (!canvas) return;
+  var box = canvas.parentElement;
+  var cssW = box.clientWidth, cssH = 280;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = cssW*dpr; canvas.height = cssH*dpr;
+  canvas.style.width = cssW+'px'; canvas.style.height = cssH+'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+
+  var css = getComputedStyle(document.querySelector('.viz-root'));
+  var colors = {};
+  ['surface-1','ink-1','ink-muted','good','critical'].forEach(function(v){ colors[v]=css.getPropertyValue('--'+v).trim(); });
+
+  var geo = buildBellowsGeometry(cssW, cssH, {wallMm:wallMm, boreMm:boreMm, convolutions:6});
+  drawBellowsProfile(ctx, cssW, geo, colors);
+
+  var dimX = geo.padSide + geo.tangentLen*0.45;
+  dimensionLine(ctx, dimX, geo.centerY-geo.boreHalf, dimX, geo.centerY+geo.boreHalf, colors['ink-1']);
+  ctx.fillStyle = colors['ink-1']; ctx.font='bold 11px ui-monospace,monospace';
+  ctx.textAlign='left'; ctx.textBaseline='middle';
+  ctx.fillText('⌀ '+boreMm.toFixed(0)+' mm', dimX+8, geo.centerY);
+
+  var wdimX = geo.padSide + geo.tangentLen*0.8;
+  dimensionLine(ctx, wdimX, geo.centerY-geo.boreHalf, wdimX, geo.centerY-(geo.boreHalf-geo.wallPx), colors['ink-muted']);
+  ctx.fillStyle = colors['ink-muted']; ctx.font='10px ui-monospace,monospace';
+  ctx.textAlign='left'; ctx.textBaseline='bottom';
+  ctx.fillText('t = '+wallMm.toFixed(2)+' mm', wdimX+6, geo.centerY-geo.boreHalf-2);
+
+  var arrowColor = colors['ink-muted'];
+  for (var k=1;k<geo.n;k+=2){
+    var ax = geo.padSide+geo.tangentLen+geo.foldW*(k+0.5);
+    var ar = outerRadiusAt(geo.tangentLen+geo.foldW*(k+0.5), geo);
+    ctx.strokeStyle = arrowColor; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(ax, geo.centerY-(ar-geo.wallPx-2)); ctx.lineTo(ax, geo.centerY-8); ctx.stroke();
+    arrowHead(ctx, ax, geo.centerY-(ar-geo.wallPx-2), -Math.PI/2, 4, arrowColor);
+  }
+
+  var crestX = geo.padSide+geo.tangentLen+geo.foldW*2.5;
+  var crestR = outerRadiusAt(geo.tangentLen+geo.foldW*2.5, geo);
+  var crestY = geo.centerY - crestR;
+  var calloutColor = pass ? colors['good'] : colors['critical'];
+  ctx.strokeStyle = calloutColor; ctx.lineWidth=1.3;
+  ctx.beginPath(); ctx.moveTo(crestX, crestY-3); ctx.lineTo(crestX+18, crestY-26); ctx.stroke();
+  ctx.fillStyle = calloutColor; ctx.font='bold 11px ui-monospace,monospace';
+  ctx.textAlign='left'; ctx.textBaseline='bottom';
+  ctx.fillText((pass?'✓ ':'✕ ')+stressVal.toFixed(1)+' MPa', crestX+20, crestY-24);
+}
+
+function drawBellowsSpringDiagram(convolutions, displacementMm, forceVal, pass){
+  var canvas = document.getElementById('simDiagramSpring');
+  if (!canvas) return;
+  var box = canvas.parentElement;
+  var cssW = box.clientWidth, cssH = 280;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = cssW*dpr; canvas.height = cssH*dpr;
+  canvas.style.width = cssW+'px'; canvas.style.height = cssH+'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+
+  var css = getComputedStyle(document.querySelector('.viz-root'));
+  var colors = {};
+  ['surface-1','ink-1','ink-muted','good','critical'].forEach(function(v){ colors[v]=css.getPropertyValue('--'+v).trim(); });
+
+  var compressFrac = Math.min(0.35, (displacementMm/8)*0.35);
+  var geo = buildBellowsGeometry(cssW, cssH, {wallMm:1.2, boreMm:300, convolutions:convolutions, compressFrac:compressFrac});
+  drawBellowsProfile(ctx, cssW, geo, colors);
+
+  var totalLen = geo.tangentLen*2 + geo.convoluteLen;
+  var dimY = geo.centerY + geo.boreHalf + geo.amp + 22;
+  dimensionLine(ctx, geo.padSide, dimY, geo.padSide+totalLen, dimY, colors['ink-muted']);
+  ctx.fillStyle = colors['ink-muted']; ctx.font='10px ui-monospace,monospace';
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  ctx.fillText(convolutions+' convolutions', geo.padSide+totalLen/2, dimY+6);
+
+  var calloutColor = pass ? colors['good'] : colors['critical'];
+  var endX = geo.padSide+totalLen-8;
+  ctx.strokeStyle = calloutColor; ctx.lineWidth=1.3;
+  ctx.beginPath(); ctx.moveTo(endX, geo.centerY-geo.boreHalf); ctx.lineTo(endX-14, geo.centerY-geo.boreHalf-24); ctx.stroke();
+  ctx.fillStyle = calloutColor; ctx.font='bold 11px ui-monospace,monospace';
+  ctx.textAlign='right'; ctx.textBaseline='bottom';
+  ctx.fillText((pass?'✓ ':'✕ ')+forceVal.toFixed(1)+' N', endX-16, geo.centerY-geo.boreHalf-22);
+
+  ctx.fillStyle = colors['ink-muted']; ctx.font='10px ui-monospace,monospace';
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  ctx.fillText('compressed '+displacementMm.toFixed(1)+' mm', geo.padSide+totalLen/2, geo.centerY+geo.boreHalf+geo.wallPx+8);
 }
 
 window.addEventListener('resize', function(){
