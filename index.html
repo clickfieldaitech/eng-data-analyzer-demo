@@ -687,6 +687,21 @@
         </section>
 
         <section class="panel" style="margin-top:18px">
+          <div class="panelhead"><h2>Design optimizer — solve for wall thickness</h2></div>
+          <p class="muted" style="font-size:.84rem;max-width:60ch">Instead of guessing a wall thickness and checking
+            the stress, set the stress you want to design to and let it calculate the minimum wall thickness needed
+            — at the current pressure, bore and material.</p>
+          <div class="cmp2grid" style="margin-top:14px">
+            <div class="field">
+              <label>Target stress (MPa)</label>
+              <input class="numinput" type="number" id="optTargetStress" step="any" value="123.3" oninput="runHydroOptimizer()">
+            </div>
+            <div></div>
+          </div>
+          <div class="specresult" id="optHydroResult" style="margin-top:14px"></div>
+        </section>
+
+        <section class="panel" style="margin-top:18px">
           <div class="panelhead"><h2>Bellows cross-section — this design</h2></div>
           <div class="chartbox"><canvas id="simDiagramHydro"></canvas></div>
           <p class="muted" style="font-size:.76rem;margin-top:10px">Live technical drawing — bore diameter and
@@ -739,6 +754,21 @@
               <div class="srow"><span>Predicted</span><b class="num" id="simSpringCostOut">—</b></div></div>
           </div>
           <div class="specresult" id="simSpringSpecResult" style="margin-top:14px"></div>
+        </section>
+
+        <section class="panel" style="margin-top:18px">
+          <div class="panelhead"><h2>Design optimizer — solve for convolution count</h2></div>
+          <p class="muted" style="font-size:.84rem;max-width:60ch">Set the maximum force you're willing to allow at
+            the current target displacement, and it calculates the minimum number of convolutions (the softest,
+            cheapest design) that stays under it.</p>
+          <div class="cmp2grid" style="margin-top:14px">
+            <div class="field">
+              <label>Max allowed force (N)</label>
+              <input class="numinput" type="number" id="optTargetForce" step="any" value="300" oninput="runSpringOptimizer()">
+            </div>
+            <div></div>
+          </div>
+          <div class="specresult" id="optSpringResult" style="margin-top:14px"></div>
         </section>
 
         <section class="panel" style="margin-top:18px">
@@ -2942,6 +2972,27 @@ function updateSimHydro(){
     '<span class="detail">'+mat.label+' allowable: '+mat.allowable+' MPa — margin '+(margin>=0?'+':'')+margin.toFixed(1)+' MPa</span>';
   drawSimHydroChart(p, t, bore, mat);
   drawBellowsHydroDiagram(t, bore, convolutions, pred.stress, pass);
+  runHydroOptimizer();
+}
+
+function runHydroOptimizer(){
+  var el = document.getElementById('optHydroResult');
+  if (!el) return;
+  var targetStress = parseFloat(document.getElementById('optTargetStress').value);
+  var p = parseFloat(document.getElementById('simPressure').value);
+  var bore = parseFloat(document.getElementById('simBore').value);
+  if (!targetStress || targetStress<=0){ el.innerHTML=''; return; }
+  var pMPa = p/10;
+  var requiredWall = pMPa * bore * 0.404 / (2*targetStress);
+  var inRange = requiredWall>=0.8 && requiredWall<=2.0;
+  el.innerHTML = '<span class="badge '+(inRange?'pass':'fail')+'">'+(inRange?'✓ SOLVED':'⚠ OUT OF RANGE')+'</span>'+
+    '<span class="detail">Requires wall thickness ≈ <b>'+requiredWall.toFixed(2)+' mm</b> at '+p.toFixed(1)+' bar, '+
+    bore.toFixed(0)+' mm bore'+(inRange?'':' — outside the 0.8–2.0 mm slider range; try a different pressure or bore')+'.</span>'+
+    (inRange ? '<button type="button" class="actbtn" onclick="applyOptimizedWall('+requiredWall.toFixed(3)+')">Apply to slider →</button>' : '');
+}
+function applyOptimizedWall(val){
+  document.getElementById('simThickness').value = Math.max(0.8, Math.min(2.0, val));
+  updateSimHydro();
 }
 
 function drawSimHydroChart(curP, wallMm, boreMm, mat){
@@ -3025,6 +3076,34 @@ function updateSimSpring(){
   drawSimSpringChart(c, d, limit);
   var forcePass = limit===null || pred.force<=limit;
   drawBellowsSpringDiagram(c, d, pred.force, forcePass);
+  runSpringOptimizer();
+}
+
+function runSpringOptimizer(){
+  var el = document.getElementById('optSpringResult');
+  if (!el) return;
+  var targetForce = parseFloat(document.getElementById('optTargetForce').value);
+  var d = parseFloat(document.getElementById('simDisplacement').value);
+  if (!targetForce || targetForce<=0){ el.innerHTML=''; return; }
+  var nonlinearTerm = 3.1*Math.pow(d,1.3);
+  if (targetForce <= nonlinearTerm){
+    el.innerHTML = '<span class="badge fail">⚠ NOT ACHIEVABLE</span>'+
+      '<span class="detail">Even the softest possible spring exceeds '+targetForce.toFixed(1)+' N at '+d.toFixed(2)+
+      ' mm displacement — try a lower displacement target or a higher force limit.</span>';
+    return;
+  }
+  var requiredConv = (81.4*8*d) / (targetForce - nonlinearTerm);
+  var practicalConv = Math.ceil(requiredConv);
+  var inRange = practicalConv>=4 && practicalConv<=14;
+  el.innerHTML = '<span class="badge '+(inRange?'pass':'fail')+'">'+(inRange?'✓ SOLVED':'⚠ OUT OF RANGE')+'</span>'+
+    '<span class="detail">Requires at least <b>'+practicalConv+' convolutions</b> (exact: '+requiredConv.toFixed(1)+
+    ') to stay under '+targetForce.toFixed(1)+' N at '+d.toFixed(2)+' mm'+
+    (inRange?'':' — outside the 4–14 slider range; try a different displacement or force limit')+'.</span>'+
+    (inRange ? '<button type="button" class="actbtn" onclick="applyOptimizedConvolutions('+practicalConv+')">Apply to slider →</button>' : '');
+}
+function applyOptimizedConvolutions(val){
+  document.getElementById('simConvolutions').value = Math.max(4, Math.min(14, val));
+  updateSimSpring();
 }
 
 function drawSimSpringChart(convolutions, curD, limit){
