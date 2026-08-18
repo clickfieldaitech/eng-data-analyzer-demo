@@ -292,6 +292,14 @@
   .cmp2grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
   #cmpChartA, #cmpChartB{height:220px}
   @media(max-width:760px){ .cmp2grid{grid-template-columns:1fr} }
+
+  /* design simulator */
+  input[type=range]{accent-color:var(--accent);width:100%;margin-top:6px}
+  .simtoggle.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .simslider{margin-bottom:4px}
+  .simslider label{display:flex;justify-content:space-between;font-size:.8rem;color:var(--ink-2)}
+  .simslider label b{color:var(--ink-1);font-family:ui-monospace,monospace}
+  #simChart, #simSpringChart{height:260px}
 </style>
 
 <div class="viz-root">
@@ -304,6 +312,7 @@
       <div class="brandsub">Demo · mock data · no AI</div>
     </div>
     <button class="switchbtn" style="margin-left:24px" onclick="openBatchScreen()" id="batchNavBtn">🗂 Batch QA Dashboard</button>
+    <button class="switchbtn" style="margin-left:10px" onclick="openSimScreen()" id="simNavBtn">🧮 Design Simulator</button>
   </div>
 
   <div class="wrap">
@@ -496,6 +505,7 @@
             variable. Leave blank to skip a bound.</p>
         </div>
         <div class="specresult" id="specResult"></div>
+        <p class="fitinfo" id="forecastInfo" style="margin-top:10px"></p>
       </section>
 
       <section class="panel">
@@ -620,6 +630,91 @@
 
       <div class="actionrow" id="batchActionsRow" style="display:none">
         <button class="actbtn primary" onclick="openBatchReport()">📑 Generate batch report</button>
+      </div>
+    </div>
+
+    <div id="simScreen" class="batchscreen">
+      <button class="switchbtn" onclick="closeSimScreen()">← Back</button>
+      <h1 style="margin-top:16px">Design Simulator</h1>
+      <p style="max-width:70ch;margin-top:8px;color:var(--ink-2)">Move the sliders to see how a design choice
+        changes the predicted result — before you ever run a physical test. Built from the same relationships
+        seen in the test data, simplified for illustration.</p>
+
+      <div class="batchactions">
+        <button class="uploadbtn simtoggle active" id="simTabHydro" onclick="setSimMode('hydro')">Hydrostatic Pressure</button>
+        <button class="uploadbtn simtoggle" id="simTabSpring" onclick="setSimMode('spring')">Spring Rate</button>
+      </div>
+
+      <div id="simHydro">
+        <section class="panel" style="margin-top:18px">
+          <div class="panelhead"><h2>Inputs</h2></div>
+          <div class="cmp2grid">
+            <div>
+              <div class="simslider"><label>Pressure <b id="simPVal">25.0 bar</b></label>
+                <input type="range" id="simPressure" min="0" max="30" step="0.5" value="25" oninput="updateSimHydro()"></div>
+              <div class="simslider"><label>Wall thickness <b id="simTVal">1.20 mm</b></label>
+                <input type="range" id="simThickness" min="0.8" max="2.0" step="0.02" value="1.2" oninput="updateSimHydro()"></div>
+            </div>
+            <div class="field">
+              <label>Material (sets the allowable stress limit)</label>
+              <select id="simMaterial" onchange="updateSimHydro()">
+                <option value="SS316L">SS316L — allowable 137 MPa</option>
+                <option value="SS321">SS321 — allowable 145 MPa</option>
+                <option value="Inconel625">Inconel 625 — allowable 220 MPa</option>
+              </select>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" style="margin-top:18px">
+          <div class="panelhead"><h2>Predicted result</h2></div>
+          <div class="statsgrid">
+            <div class="statcard"><div class="shead"><span class="sname">Hoop stress</span></div>
+              <div class="srow"><span>Predicted</span><b class="num" id="simStressOut">—</b></div></div>
+            <div class="statcard"><div class="shead"><span class="sname">Axial displacement</span></div>
+              <div class="srow"><span>Predicted</span><b class="num" id="simDispOut">—</b></div></div>
+          </div>
+          <div class="specresult" id="simSpecResult" style="margin-top:14px"></div>
+        </section>
+
+        <section class="panel" style="margin-top:18px">
+          <div class="panelhead"><h2>Stress vs pressure — at this wall thickness</h2></div>
+          <div class="chartbox"><canvas id="simChart"></canvas></div>
+          <p class="muted" style="font-size:.76rem;margin-top:10px">Dashed line = material's allowable stress limit. Marker = current slider position.</p>
+        </section>
+      </div>
+
+      <div id="simSpring" style="display:none">
+        <section class="panel" style="margin-top:18px">
+          <div class="panelhead"><h2>Inputs</h2></div>
+          <div class="cmp2grid">
+            <div class="simslider"><label>Convolutions <b id="simCVal">8</b></label>
+              <input type="range" id="simConvolutions" min="4" max="14" step="1" value="8" oninput="updateSimSpring()"></div>
+            <div class="simslider"><label>Displacement target <b id="simDVal">4.00 mm</b></label>
+              <input type="range" id="simDisplacement" min="0" max="8" step="0.1" value="4" oninput="updateSimSpring()"></div>
+          </div>
+          <div class="field" style="margin-top:12px;max-width:340px">
+            <label>Max allowable force (N) — optional</label>
+            <input class="numinput" type="number" id="simForceLimit" step="any" oninput="updateSimSpring()">
+          </div>
+        </section>
+
+        <section class="panel" style="margin-top:18px">
+          <div class="panelhead"><h2>Predicted result</h2></div>
+          <div class="statsgrid">
+            <div class="statcard"><div class="shead"><span class="sname">Spring rate (k)</span></div>
+              <div class="srow"><span>Predicted</span><b class="num" id="simKOut">—</b></div></div>
+            <div class="statcard"><div class="shead"><span class="sname">Force at target displacement</span></div>
+              <div class="srow"><span>Predicted</span><b class="num" id="simForceOut">—</b></div></div>
+          </div>
+          <div class="specresult" id="simSpringSpecResult" style="margin-top:14px"></div>
+        </section>
+
+        <section class="panel" style="margin-top:18px">
+          <div class="panelhead"><h2>Force vs displacement — at this convolution count</h2></div>
+          <div class="chartbox"><canvas id="simSpringChart"></canvas></div>
+          <p class="muted" style="font-size:.76rem;margin-top:10px">Dashed line = force limit, if set. Marker = current target displacement.</p>
+        </section>
       </div>
     </div>
   </div>
@@ -1008,6 +1103,18 @@ function computeFit(pts, type){
   return null;
 }
 
+function computeCrossingPoint(fitFn, xEnd, lower, upper, xMin, xMax){
+  var range = (xMax-xMin) || 1;
+  var horizon = xEnd + range*3;
+  var step = range/300;
+  if (step<=0) return null;
+  for (var x=xEnd+step; x<=horizon; x+=step){
+    var y = fitFn(x);
+    if ((lower!==null && y<lower) || (upper!==null && y>upper)) return x;
+  }
+  return null;
+}
+
 function crossCorrelate(a, b, maxLag){
   function pearson(x, y){
     var n = x.length;
@@ -1342,6 +1449,7 @@ function onControlsChange(skipCtrlRead){
   renderOutlierNote();
   renderXcorrNote();
   renderSpecCompliance();
+  renderForecast();
 }
 
 function primarySeries(){
@@ -1431,6 +1539,37 @@ function renderSpecCompliance(){
     '</span>';
 }
 
+function renderForecast(){
+  var el = document.getElementById('forecastInfo');
+  if (!el) return;
+  if (state.fitType==='none'){ el.innerHTML=''; return; }
+  var lowerRaw = document.getElementById('specLower').value;
+  var upperRaw = document.getElementById('specUpper').value;
+  var lower = lowerRaw!=='' ? parseFloat(lowerRaw) : null;
+  var upper = upperRaw!=='' ? parseFloat(upperRaw) : null;
+  if (lower===null && upper===null){ el.innerHTML=''; return; }
+  var prim = primarySeries();
+  if (!prim || prim.pts.length<3){ el.innerHTML=''; return; }
+  var alreadyFailing = prim.pts.some(function(p){ return (lower!==null&&p.y<lower)||(upper!==null&&p.y>upper); });
+  if (alreadyFailing){
+    el.innerHTML = '<b>Already outside the spec limit</b> within the current data — see Spec compliance above.';
+    return;
+  }
+  var fit = computeFit(prim.pts, state.fitType);
+  if (!fit){ el.innerHTML=''; return; }
+  var xs = prim.pts.map(function(p){return p.x;});
+  var xMin = Math.min.apply(null,xs), xMax = Math.max.apply(null,xs);
+  var crossing = computeCrossingPoint(fit.fn, xMax, lower, upper, xMin, xMax);
+  var xLabel = labelFor(state.xKey);
+  if (crossing==null){
+    el.innerHTML = 'Forecast (based on the '+fit.label+' fit): '+prim.col.label+' is not projected to cross the spec limit within a reasonable forecast horizon.';
+  } else {
+    var delta = crossing - xMax;
+    el.innerHTML = '📈 <b>Forecast:</b> at this rate, '+prim.col.label+' is projected to cross the spec limit at '+
+      xLabel+' ≈ <b>'+formatTick(crossing)+'</b> — about <b>'+formatTick(delta)+'</b> '+xLabel.toLowerCase()+' beyond the current data. See the dashed projection on the chart above.';
+  }
+}
+
 function uniqueUnits(){
   var u = {};
   state.yKeys.forEach(function(k){ var c = colFor(k); u[c.unit||''] = true; });
@@ -1458,7 +1597,7 @@ function toggleSeries(k){
   drawChart(); drawSpectrum();
   if (state.showSpectrogram) drawSpectrogram();
   if (state.showWaterfall) drawWaterfall();
-  renderLegend(); renderStats(); renderFitInfo(); renderOutlierNote(); renderXcorrNote(); renderSpecCompliance();
+  renderLegend(); renderStats(); renderFitInfo(); renderOutlierNote(); renderXcorrNote(); renderSpecCompliance(); renderForecast();
 }
 
 function renderStats(){
@@ -1521,6 +1660,27 @@ function drawChart(){
   var xs = rows.map(function(r){return r[state.xKey];});
   var xMin = Math.min.apply(null,xs), xMax = Math.max.apply(null,xs);
   if (xMin===xMax){ xMax = xMin+1; }
+  var dataXMax = xMax;
+
+  var forecastCrossing = null;
+  if (state.fitType!=='none' && visKeys.length){
+    var lowerRawFC = document.getElementById('specLower').value;
+    var upperRawFC = document.getElementById('specUpper').value;
+    var loFC = lowerRawFC!=='' ? parseFloat(lowerRawFC) : null;
+    var upFC = upperRawFC!=='' ? parseFloat(upperRawFC) : null;
+    if (loFC!==null || upFC!==null){
+      var primKeyFC = visKeys[0];
+      var primPtsFC = rows.map(function(r){ return {x:r[state.xKey], y:r[primKeyFC]}; });
+      var alreadyFailingFC = primPtsFC.some(function(p){ return (loFC!==null&&p.y<loFC)||(upFC!==null&&p.y>upFC); });
+      if (!alreadyFailingFC){
+        var fitFC = computeFit(primPtsFC, state.fitType);
+        if (fitFC){
+          forecastCrossing = computeCrossingPoint(fitFC.fn, dataXMax, loFC, upFC, xMin, dataXMax);
+          if (forecastCrossing!=null){ xMax = forecastCrossing + (dataXMax-xMin)*0.08; }
+        }
+      }
+    }
+  }
 
   var series = visKeys.map(function(k, idx){
     var origIdx = state.yKeys.indexOf(k);
@@ -1566,6 +1726,20 @@ function drawChart(){
   }
   ctx.strokeStyle = colors['baseline']; ctx.lineWidth=1.2;
   ctx.beginPath(); ctx.moveTo(padL, padT+plotH); ctx.lineTo(cssW-padR, padT+plotH); ctx.stroke();
+
+  if (xMax>dataXMax){
+    var fzx0 = px(dataXMax), fzx1 = px(xMax);
+    ctx.save();
+    ctx.fillStyle = colors['ink-muted']; ctx.globalAlpha = 0.07;
+    ctx.fillRect(fzx0, padT, fzx1-fzx0, plotH);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = colors['ink-muted']; ctx.setLineDash([2,3]); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(fzx0, padT); ctx.lineTo(fzx0, padT+plotH); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = colors['ink-muted']; ctx.font = '9px ui-monospace,monospace';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+    ctx.fillText('forecast →', fzx0+4, padT+2);
+  }
 
   if (state.chartType==='bar'){
     var s0 = series[0];
@@ -1666,6 +1840,21 @@ function drawChart(){
           }
           ctx.stroke();
           ctx.restore();
+
+          if (forecastCrossing!=null){
+            var predY = fit.fn(forecastCrossing);
+            var mx = px(forecastCrossing);
+            var my = py(state.normalize && series.length>1 ? predY/primary.norm*100 : predY);
+            ctx.save();
+            ctx.fillStyle = colors['critical'];
+            ctx.beginPath();
+            ctx.moveTo(mx, my-6); ctx.lineTo(mx+6, my); ctx.lineTo(mx, my+6); ctx.lineTo(mx-6, my); ctx.closePath();
+            ctx.fill();
+            ctx.font = 'bold 10px ui-monospace,monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+            ctx.fillStyle = colors['critical'];
+            ctx.fillText('predicted crossing', mx, my-10);
+            ctx.restore();
+          }
         }
       }
 
@@ -2100,7 +2289,9 @@ function openReport(){
 
   var specHtml = '';
   var specResultText = document.getElementById('specResult').innerHTML;
-  if (specResultText) specHtml = '<div class="rsectitle">Spec compliance</div><p class="rsummary">'+specResultText+'</p>';
+  var forecastText = document.getElementById('forecastInfo').innerHTML;
+  if (specResultText) specHtml = '<div class="rsectitle">Spec compliance</div><p class="rsummary">'+specResultText+
+    (forecastText ? '<br><br>'+forecastText : '')+'</p>';
 
   var fitHtml = '';
   if (state.fitType!=='none'){
@@ -2158,6 +2349,7 @@ var BATCH_COLORS = ['s1','s2','s3','s4','cmp','critical'];
 function openBatchScreen(){
   document.getElementById('introScreen').style.display = 'none';
   document.getElementById('workspace').classList.remove('on');
+  document.getElementById('simScreen').classList.remove('on');
   document.getElementById('batchScreen').classList.add('on');
 }
 function closeBatchScreen(){
@@ -2637,10 +2829,195 @@ function openBatchReport(){
   document.getElementById('reportModal').classList.add('on');
 }
 
+/* ---- design simulator ---- */
+var simMode = 'hydro';
+var SIM_MATERIALS = {
+  SS316L: {label:'SS316L', allowable:137},
+  SS321: {label:'SS321', allowable:145},
+  Inconel625: {label:'Inconel 625', allowable:220}
+};
+
+function openSimScreen(){
+  document.getElementById('introScreen').style.display = 'none';
+  document.getElementById('workspace').classList.remove('on');
+  document.getElementById('batchScreen').classList.remove('on');
+  document.getElementById('simScreen').classList.add('on');
+  updateSimHydro();
+  updateSimSpring();
+}
+function closeSimScreen(){
+  document.getElementById('simScreen').classList.remove('on');
+  document.getElementById('introScreen').style.display = '';
+}
+function setSimMode(mode){
+  simMode = mode;
+  document.getElementById('simHydro').style.display = mode==='hydro' ? '' : 'none';
+  document.getElementById('simSpring').style.display = mode==='spring' ? '' : 'none';
+  document.getElementById('simTabHydro').classList.toggle('active', mode==='hydro');
+  document.getElementById('simTabSpring').classList.toggle('active', mode==='spring');
+  if (mode==='hydro') updateSimHydro(); else updateSimSpring();
+}
+
+function hydroPredict(pressureBar, wallMm){
+  var pMPa = pressureBar/10;
+  var stress = pMPa * 300 / (2*wallMm) * 0.404;
+  var disp = Math.pow(pressureBar,1.04) * 0.0168 * (1.2/wallMm);
+  return {stress:stress, disp:disp};
+}
+
+function updateSimHydro(){
+  var p = parseFloat(document.getElementById('simPressure').value);
+  var t = parseFloat(document.getElementById('simThickness').value);
+  var matKey = document.getElementById('simMaterial').value;
+  var mat = SIM_MATERIALS[matKey];
+  document.getElementById('simPVal').textContent = p.toFixed(1)+' bar';
+  document.getElementById('simTVal').textContent = t.toFixed(2)+' mm';
+  var pred = hydroPredict(p, t);
+  document.getElementById('simStressOut').textContent = pred.stress.toFixed(1)+' MPa';
+  document.getElementById('simDispOut').textContent = pred.disp.toFixed(3)+' mm';
+  var pass = pred.stress <= mat.allowable;
+  var margin = mat.allowable - pred.stress;
+  document.getElementById('simSpecResult').innerHTML =
+    '<span class="badge '+(pass?'pass':'fail')+'">'+(pass?'✓ WITHIN LIMIT':'✕ EXCEEDS LIMIT')+'</span>'+
+    '<span class="detail">'+mat.label+' allowable: '+mat.allowable+' MPa — margin '+(margin>=0?'+':'')+margin.toFixed(1)+' MPa</span>';
+  drawSimHydroChart(p, t, mat);
+}
+
+function drawSimHydroChart(curP, wallMm, mat){
+  var canvas = document.getElementById('simChart');
+  var box = canvas.parentElement;
+  var cssW = box.clientWidth, cssH = 260;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = cssW*dpr; canvas.height = cssH*dpr;
+  canvas.style.width = cssW+'px'; canvas.style.height = cssH+'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+
+  var css = getComputedStyle(document.querySelector('.viz-root'));
+  var colors = {};
+  ['grid','baseline','ink-muted','ink-1','s1','critical'].forEach(function(v){ colors[v]=css.getPropertyValue('--'+v).trim(); });
+
+  var pts = []; for (var p=0; p<=30; p+=0.5){ pts.push({x:p, y:hydroPredict(p,wallMm).stress}); }
+  var yVals = pts.map(function(pt){return pt.y;}).concat([mat.allowable]);
+  var yMax = Math.max.apply(null, yVals)*1.1;
+
+  var padL=54, padR=16, padT=14, padB=28;
+  var plotW=cssW-padL-padR, plotH=cssH-padT-padB;
+  function px(x){ return padL + (x/30)*plotW; }
+  function py(y){ return padT + plotH - (y/yMax)*plotH; }
+
+  ctx.strokeStyle=colors['grid']; ctx.lineWidth=1; ctx.font='10px ui-monospace,monospace'; ctx.fillStyle=colors['ink-muted'];
+  for (var i=0;i<=4;i++){
+    var yv=yMax*i/4, yp=py(yv);
+    ctx.beginPath(); ctx.moveTo(padL,yp); ctx.lineTo(cssW-padR,yp); ctx.stroke();
+    ctx.textAlign='right'; ctx.textBaseline='middle'; ctx.fillText(formatTick(yv), padL-6, yp);
+  }
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  for (i=0;i<=6;i++){ var xv=30*i/6; ctx.fillText(formatTick(xv), px(xv), cssH-padB+8); }
+  ctx.strokeStyle=colors['baseline'];
+  ctx.beginPath(); ctx.moveTo(padL,padT+plotH); ctx.lineTo(cssW-padR,padT+plotH); ctx.stroke();
+
+  ctx.strokeStyle=colors['critical']; ctx.setLineDash([6,4]); ctx.lineWidth=1.4;
+  ctx.beginPath(); ctx.moveTo(padL,py(mat.allowable)); ctx.lineTo(cssW-padR,py(mat.allowable)); ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.strokeStyle=colors['s1']; ctx.lineWidth=2; ctx.beginPath();
+  pts.forEach(function(pt,idx){ var xp=px(pt.x), yp=py(pt.y); if(idx===0) ctx.moveTo(xp,yp); else ctx.lineTo(xp,yp); });
+  ctx.stroke();
+
+  var curStress = hydroPredict(curP,wallMm).stress;
+  var mxp=px(curP), myp=py(curStress);
+  ctx.fillStyle = curStress<=mat.allowable ? colors['s1'] : colors['critical'];
+  ctx.beginPath(); ctx.arc(mxp,myp,5,0,Math.PI*2); ctx.fill();
+}
+
+function springPredict(convolutions, displacement){
+  var k = 81.4 * (8/convolutions);
+  var force = k*displacement + 3.1*Math.pow(displacement,1.3);
+  return {k:k, force:force};
+}
+
+function updateSimSpring(){
+  var c = parseFloat(document.getElementById('simConvolutions').value);
+  var d = parseFloat(document.getElementById('simDisplacement').value);
+  var limitRaw = document.getElementById('simForceLimit').value;
+  var limit = limitRaw!=='' ? parseFloat(limitRaw) : null;
+  document.getElementById('simCVal').textContent = c;
+  document.getElementById('simDVal').textContent = d.toFixed(2)+' mm';
+  var pred = springPredict(c, d);
+  document.getElementById('simKOut').textContent = pred.k.toFixed(1)+' N/mm';
+  document.getElementById('simForceOut').textContent = pred.force.toFixed(1)+' N';
+  var el = document.getElementById('simSpringSpecResult');
+  if (limit===null){ el.innerHTML=''; }
+  else {
+    var pass = pred.force <= limit;
+    var margin = limit - pred.force;
+    el.innerHTML = '<span class="badge '+(pass?'pass':'fail')+'">'+(pass?'✓ WITHIN LIMIT':'✕ EXCEEDS LIMIT')+'</span>'+
+      '<span class="detail">Limit: '+limit.toFixed(1)+' N — margin '+(margin>=0?'+':'')+margin.toFixed(1)+' N</span>';
+  }
+  drawSimSpringChart(c, d, limit);
+}
+
+function drawSimSpringChart(convolutions, curD, limit){
+  var canvas = document.getElementById('simSpringChart');
+  var box = canvas.parentElement;
+  var cssW = box.clientWidth, cssH = 260;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = cssW*dpr; canvas.height = cssH*dpr;
+  canvas.style.width = cssW+'px'; canvas.style.height = cssH+'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+
+  var css = getComputedStyle(document.querySelector('.viz-root'));
+  var colors = {};
+  ['grid','baseline','ink-muted','s2','critical'].forEach(function(v){ colors[v]=css.getPropertyValue('--'+v).trim(); });
+
+  var pts = []; for (var d=0; d<=8; d+=0.2){ pts.push({x:d, y:springPredict(convolutions,d).force}); }
+  var yVals = pts.map(function(pt){return pt.y;});
+  if (limit!==null) yVals.push(limit);
+  var yMax = Math.max.apply(null, yVals)*1.1 || 1;
+
+  var padL=54, padR=16, padT=14, padB=28;
+  var plotW=cssW-padL-padR, plotH=cssH-padT-padB;
+  function px(x){ return padL + (x/8)*plotW; }
+  function py(y){ return padT + plotH - (y/yMax)*plotH; }
+
+  ctx.strokeStyle=colors['grid']; ctx.lineWidth=1; ctx.font='10px ui-monospace,monospace'; ctx.fillStyle=colors['ink-muted'];
+  for (var i=0;i<=4;i++){
+    var yv=yMax*i/4, yp=py(yv);
+    ctx.beginPath(); ctx.moveTo(padL,yp); ctx.lineTo(cssW-padR,yp); ctx.stroke();
+    ctx.textAlign='right'; ctx.textBaseline='middle'; ctx.fillText(formatTick(yv), padL-6, yp);
+  }
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  for (i=0;i<=4;i++){ var xv=8*i/4; ctx.fillText(formatTick(xv), px(xv), cssH-padB+8); }
+  ctx.strokeStyle=colors['baseline'];
+  ctx.beginPath(); ctx.moveTo(padL,padT+plotH); ctx.lineTo(cssW-padR,padT+plotH); ctx.stroke();
+
+  if (limit!==null){
+    ctx.strokeStyle=colors['critical']; ctx.setLineDash([6,4]); ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.moveTo(padL,py(limit)); ctx.lineTo(cssW-padR,py(limit)); ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  ctx.strokeStyle=colors['s2']; ctx.lineWidth=2; ctx.beginPath();
+  pts.forEach(function(pt,idx){ var xp=px(pt.x), yp=py(pt.y); if(idx===0) ctx.moveTo(xp,yp); else ctx.lineTo(xp,yp); });
+  ctx.stroke();
+
+  var curForce = springPredict(convolutions,curD).force;
+  var mxp=px(curD), myp=py(curForce);
+  ctx.fillStyle = (limit===null || curForce<=limit) ? colors['s2'] : colors['critical'];
+  ctx.beginPath(); ctx.arc(mxp,myp,5,0,Math.PI*2); ctx.fill();
+}
+
 window.addEventListener('resize', function(){
   if (state.key){ drawChart(); drawSpectrum(); if(state.showSpectrogram) drawSpectrogram(); if(state.showWaterfall) drawWaterfall(); }
   if (batchFiles.length===2){ renderCmpChartAndStats('A', cmpFileA.file); renderCmpChartAndStats('B', cmpFileB.file); }
   else if (batchFiles.length){ drawBatchOverlay(); }
+  if (document.getElementById('simScreen').classList.contains('on')){
+    if (simMode==='hydro') updateSimHydro(); else updateSimSpring();
+  }
 });
 
 document.getElementById('csvFileInput').addEventListener('change', function(){
