@@ -1,0 +1,2663 @@
+<meta charset="utf-8">
+<title>MB Engineering Data Analyzer — Demo</title>
+<style>
+  .viz-root{
+    --surface-1:#fcfcfb; --page:#f9f9f7; --panel:#ffffff;
+    --ink-1:#0b0b0b; --ink-2:#52514e; --ink-muted:#898781;
+    --grid:#e1e0d9; --baseline:#c3c2b7; --border:rgba(11,11,11,.10);
+    --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
+    --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --critical:#d03b3b;
+    --good-bg:#e4f4e4; --crit-bg:#fbe6e6; --cmp:#8a63d2;
+    --accent:#2a78d6; --accent-ink:#184f95;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:where(:not([data-theme="light"])) .viz-root{
+      --surface-1:#1a1a19; --page:#0d0d0d; --panel:#181818;
+      --ink-1:#ffffff; --ink-2:#c3c2b7; --ink-muted:#898781;
+      --grid:#2c2c2a; --baseline:#383835; --border:rgba(255,255,255,.10);
+      --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+      --good-bg:#123018; --crit-bg:#301414; --cmp:#a689e8;
+      --accent:#3987e5; --accent-ink:#8fbcf2;
+    }
+  }
+  :root[data-theme="dark"] .viz-root{
+    --surface-1:#1a1a19; --page:#0d0d0d; --panel:#181818;
+    --ink-1:#ffffff; --ink-2:#c3c2b7; --ink-muted:#898781;
+    --grid:#2c2c2a; --baseline:#383835; --border:rgba(255,255,255,.10);
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
+    --good-bg:#123018; --crit-bg:#301414; --cmp:#a689e8;
+    --accent:#3987e5; --accent-ink:#8fbcf2;
+  }
+  :root[data-theme="light"] .viz-root{
+    --surface-1:#fcfcfb; --page:#f9f9f7; --panel:#ffffff;
+    --ink-1:#0b0b0b; --ink-2:#52514e; --ink-muted:#898781;
+    --grid:#e1e0d9; --baseline:#c3c2b7; --border:rgba(11,11,11,.10);
+    --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
+    --good-bg:#e4f4e4; --crit-bg:#fbe6e6; --cmp:#8a63d2;
+    --accent:#2a78d6; --accent-ink:#184f95;
+  }
+  *{box-sizing:border-box}
+  .viz-root{
+    background:var(--page); color:var(--ink-1);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+    min-height:100%; line-height:1.5;
+  }
+  .mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace}
+  .num{font-variant-numeric:tabular-nums}
+  .wrap{max-width:1760px;margin:0 auto;padding:0 40px 60px}
+  button{font:inherit;cursor:pointer}
+  button:focus-visible,input:focus-visible,select:focus-visible,[tabindex]:focus-visible{
+    outline:2px solid var(--accent);outline-offset:2px}
+
+  /* header */
+  .topbar{display:flex;align-items:center;gap:12px;padding:20px 20px;border-bottom:1px solid var(--border)}
+  .brandmark{width:28px;height:28px;border-radius:6px;background:var(--accent);position:relative;flex:none}
+  .brandmark::after{content:"";position:absolute;inset:8px;border:2px solid var(--page);border-radius:2px}
+  .brandtext{font-weight:700;letter-spacing:-.01em}
+  .brandsub{font-family:ui-monospace,monospace;font-size:.7rem;color:var(--ink-muted);letter-spacing:.08em;text-transform:uppercase}
+  .theme{margin-left:auto;font-family:ui-monospace,monospace;font-size:.72rem;background:var(--panel);
+    border:1px solid var(--border);color:var(--ink-2);border-radius:20px;padding:6px 12px}
+
+  h1,h2,h3{margin:0;letter-spacing:-.01em}
+  h1{font-size:1.5rem;font-weight:750}
+  h2{font-size:1.05rem;font-weight:700}
+  h3{font-size:.92rem;font-weight:700}
+  p{margin:0}
+  .muted{color:var(--ink-muted)}
+  .soft{color:var(--ink-2)}
+
+  /* upload screen */
+  .intro{padding:38px 0 8px}
+  .intro p{max-width:60ch;margin-top:8px;color:var(--ink-2)}
+  .filegrid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:26px}
+  .filecard{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px;
+    text-align:left;transition:border-color .15s}
+  .filecard:hover{border-color:var(--accent)}
+  .filecard .ico{font-size:1.3rem}
+  .filecard .fname{margin-top:10px;font-family:ui-monospace,monospace;font-size:.82rem;font-weight:600}
+  .filecard .fmeta{margin-top:4px;font-size:.76rem;color:var(--ink-muted)}
+  .filecard .ftag{display:inline-block;margin-top:10px;font-size:.68rem;font-family:ui-monospace,monospace;
+    background:var(--surface-1);border:1px solid var(--border);border-radius:20px;padding:2px 9px;color:var(--ink-2)}
+
+  .uploadrow{margin-top:22px;text-align:center;padding:24px 20px;border:1.5px dashed var(--border);
+    border-radius:12px;transition:border-color .15s,background-color .15s}
+  .uploadrow.drag{border-color:var(--accent);background:var(--surface-1)}
+  .uploadbtn{background:var(--panel);border:1px solid var(--border);color:var(--ink-1);border-radius:8px;
+    padding:10px 18px;font-weight:650;font-size:.86rem}
+  .uploadbtn:hover{border-color:var(--accent);color:var(--accent-ink)}
+
+  .parsing{display:none;align-items:center;gap:12px;margin-top:22px;padding:14px 16px;
+    background:var(--panel);border:1px solid var(--border);border-radius:10px;font-size:.88rem;color:var(--ink-2)}
+  .parsing.on{display:flex}
+  .spinner{width:16px;height:16px;border-radius:50%;border:2px solid var(--grid);border-top-color:var(--accent);
+    animation:spin .7s linear infinite;flex:none}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.spinner{animation:none;border-top-color:var(--grid)}}
+
+  /* workspace */
+  .workspace{display:none}
+  .workspace.on{display:block}
+  .fileinfo{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:30px;padding:14px 18px;
+    background:var(--panel);border:1px solid var(--border);border-radius:12px}
+  .fileinfo .fn{font-family:ui-monospace,monospace;font-weight:700;font-size:.88rem}
+  .fileinfo .stat{font-size:.78rem;color:var(--ink-muted)}
+  .fileinfo .stat b{color:var(--ink-1);font-weight:700}
+  .switchbtn{margin-left:auto;font-size:.78rem;background:transparent;border:1px solid var(--border);
+    color:var(--ink-2);border-radius:8px;padding:6px 11px}
+  .switchbtn:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .metarow{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .metachip{font-size:.7rem;font-family:ui-monospace,monospace;background:var(--surface-1);
+    border:1px solid var(--border);border-radius:6px;padding:3px 8px;color:var(--ink-2)}
+
+  section.panel{margin-top:18px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px}
+  .panelhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+
+  /* preview table */
+  .tblwrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:260px;overflow-y:auto}
+  table{width:100%;border-collapse:collapse;font-size:.82rem;min-width:560px}
+  th,td{text-align:right;padding:7px 12px;border-bottom:1px solid var(--grid);white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  th{position:sticky;top:0;background:var(--surface-1);font-family:ui-monospace,monospace;font-size:.68rem;
+    letter-spacing:.05em;text-transform:uppercase;color:var(--ink-muted);font-weight:600}
+  tbody tr:hover{background:var(--surface-1)}
+  td{color:var(--ink-2)}
+  .status-ok{color:var(--good);font-weight:600}
+  .status-warn{color:var(--warn);font-weight:600}
+  .status-crit{color:var(--critical);font-weight:600}
+
+  /* controls */
+  .controls{display:grid;grid-template-columns:1fr 2fr 1fr auto;gap:14px;align-items:end}
+  .field label{display:block;font-size:.72rem;font-family:ui-monospace,monospace;text-transform:uppercase;
+    letter-spacing:.05em;color:var(--ink-muted);margin-bottom:6px}
+  select,.numinput{width:100%;padding:9px 10px;border:1px solid var(--border);border-radius:8px;
+    background:var(--surface-1);color:var(--ink-1);font-size:.86rem}
+  .ycheck{display:flex;flex-wrap:wrap;gap:8px}
+  .ychip{display:inline-flex;align-items:center;gap:6px;font-size:.8rem;background:var(--surface-1);
+    border:1px solid var(--border);border-radius:8px;padding:6px 10px;cursor:pointer;user-select:none}
+  .ychip input{margin:0}
+  .ychip .sw{width:9px;height:9px;border-radius:50%;flex:none}
+  .genbtn{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:10px 18px;font-weight:650;
+    font-size:.86rem;white-space:nowrap}
+  .genbtn:hover{filter:brightness(1.08)}
+  .normrow{margin-top:10px;display:flex;align-items:center;gap:8px;font-size:.8rem;color:var(--ink-2)}
+  .normrow input{margin:0}
+  .unitnote{margin-top:8px;font-size:.76rem;color:var(--warn)}
+  .subrow{margin-top:14px;padding-top:14px;border-top:1px dashed var(--border);display:flex;flex-wrap:wrap;
+    gap:16px;align-items:center}
+  .subrow .field{min-width:180px}
+  .fitinfo{margin-top:10px;font-size:.8rem;color:var(--ink-2);font-family:ui-monospace,monospace}
+  .fitinfo b{color:var(--accent-ink)}
+  .smallnote{margin-top:10px;font-size:.8rem;color:var(--ink-2)}
+  .smallnote b{color:var(--ink-1)}
+
+  /* spec compliance */
+  .speclimits{display:flex;flex-wrap:wrap;gap:14px;align-items:end}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-family:ui-monospace,monospace;font-weight:700;
+    font-size:.8rem;padding:6px 13px;border-radius:20px}
+  .badge.pass{background:var(--good-bg);color:var(--good)}
+  .badge.fail{background:var(--crit-bg);color:var(--critical)}
+  .specresult{margin-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .specresult .detail{font-size:.82rem;color:var(--ink-2)}
+
+  /* chart */
+  .chartarea{margin-top:16px}
+  .chartbox{position:relative;background:var(--surface-1);border:1px solid var(--border);border-radius:10px}
+  canvas{display:block;width:100%}
+  #chartCanvas{height:340px}
+  #fftCanvas{height:150px}
+  #spectroCanvas{height:150px}
+  .fftrow{margin-top:12px;display:flex;align-items:center;gap:8px;font-size:.8rem;color:var(--ink-2)}
+  .fftrow input{margin:0}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px}
+  .legitem{display:flex;align-items:center;gap:7px;font-size:.82rem;color:var(--ink-2);cursor:pointer;
+    padding:4px 8px;border-radius:6px}
+  .legitem:hover{background:var(--surface-1)}
+  .legitem.off{opacity:.35}
+  .legitem .sw{width:11px;height:11px;border-radius:3px;flex:none}
+  .tooltip{position:absolute;pointer-events:none;background:var(--panel);border:1px solid var(--border);
+    border-radius:8px;padding:8px 11px;font-size:.78rem;box-shadow:0 4px 14px rgba(0,0,0,.15);
+    opacity:0;transition:opacity .08s;z-index:5;min-width:120px}
+  .tooltip.show{opacity:1}
+  .tooltip .trow{display:flex;align-items:center;gap:6px;margin-top:2px}
+  .tooltip .sw{width:8px;height:8px;border-radius:50%;flex:none}
+  .tooltip .tx{font-family:ui-monospace,monospace;font-size:.7rem;color:var(--ink-muted);margin-bottom:3px}
+
+  /* stats */
+  .statsgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin-top:14px}
+  .statcard{border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+  .statcard .shead{display:flex;align-items:center;gap:7px;margin-bottom:8px}
+  .statcard .sw{width:9px;height:9px;border-radius:50%}
+  .statcard .sname{font-size:.82rem;font-weight:700}
+  .statcard .srow{display:flex;justify-content:space-between;font-size:.8rem;padding:2px 0;color:var(--ink-2)}
+  .statcard .srow b{color:var(--ink-1);font-weight:650}
+
+  /* filter */
+  .filterrow{display:flex;flex-wrap:wrap;gap:12px;align-items:end}
+  .filterrow .field{min-width:140px}
+  .presetbtns{display:flex;gap:6px;flex-wrap:wrap}
+  .presetbtn{font-size:.76rem;background:var(--surface-1);border:1px solid var(--border);color:var(--ink-2);
+    border-radius:20px;padding:5px 11px}
+  .presetbtn:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .presetbtn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .applybtn{background:transparent;border:1px solid var(--border);color:var(--ink-2);border-radius:8px;padding:8px 14px;font-size:.84rem}
+  .applybtn:hover{border-color:var(--accent);color:var(--accent-ink)}
+
+  /* Q&A */
+  .qchips{display:flex;flex-wrap:wrap;gap:8px}
+  .qchip{font-size:.82rem;background:var(--surface-1);border:1px solid var(--border);border-radius:20px;
+    padding:8px 14px;color:var(--ink-2)}
+  .qchip:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .answers{display:flex;flex-direction:column;gap:10px;margin-top:14px}
+  .abubble{max-width:85%;padding:11px 15px;border-radius:12px;font-size:.9rem;line-height:1.55}
+  .abubble.q{align-self:flex-end;background:var(--accent);color:#fff;border-bottom-right-radius:3px}
+  .abubble.a{align-self:flex-start;background:var(--surface-1);border:1px solid var(--border);
+    border-bottom-left-radius:3px}
+  .abubble.a b{color:var(--accent-ink)}
+  .aihint{margin-top:12px;font-size:.78rem;color:var(--ink-muted);border-top:1px dashed var(--border);padding-top:10px}
+
+  /* actions */
+  .actionrow{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+  .actbtn{background:var(--panel);border:1px solid var(--border);color:var(--ink-1);border-radius:8px;
+    padding:10px 16px;font-size:.86rem;font-weight:600;display:inline-flex;align-items:center;gap:7px}
+  .actbtn:hover{border-color:var(--accent);color:var(--accent-ink)}
+  .actbtn.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .actbtn.primary:hover{filter:brightness(1.08);color:#fff}
+
+  /* modal */
+  .modalbg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:50;align-items:flex-start;
+    justify-content:center;padding:40px 20px;overflow-y:auto}
+  .modalbg.on{display:flex}
+  .modal{background:var(--panel);border-radius:14px;max-width:760px;width:100%;padding:0;overflow:hidden;
+    box-shadow:0 20px 60px rgba(0,0,0,.3)}
+  .modalhead{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;
+    border-bottom:1px solid var(--border)}
+  .modalbody{padding:26px 28px}
+  .closex{background:transparent;border:none;color:var(--ink-muted);font-size:1.1rem;line-height:1;padding:4px}
+  .modalfoot{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--border)}
+
+  /* formatted report document */
+  .rdoc{font-size:.86rem}
+  .rdochead{display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:14px;
+    border-bottom:2px solid var(--ink-1);margin-bottom:16px}
+  .rdochead .rtitle{font-size:1.1rem;font-weight:800;letter-spacing:-.01em}
+  .rdochead .rsub{font-size:.74rem;color:var(--ink-muted);margin-top:2px;font-family:ui-monospace,monospace}
+  .rdochead .rid{text-align:right;font-family:ui-monospace,monospace;font-size:.72rem;color:var(--ink-muted);line-height:1.6}
+  .rmetagrid{display:grid;grid-template-columns:1fr 1fr;gap:2px 28px;margin-bottom:6px;font-size:.8rem}
+  .rmetagrid .mrow{display:flex;justify-content:space-between;gap:10px;border-bottom:1px dotted var(--border);padding:4px 0}
+  .rmetagrid .mrow span:first-child{color:var(--ink-muted)}
+  .rmetagrid .mrow span:last-child{font-weight:600;text-align:right}
+  .rsectitle{font-size:.7rem;font-family:ui-monospace,monospace;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--ink-muted);margin:20px 0 9px;padding-bottom:5px;border-bottom:1px solid var(--border)}
+  .rchartimg{width:100%;border:1px solid var(--border);border-radius:6px;display:block;background:var(--surface-1)}
+  .rsummary{font-size:.86rem;line-height:1.65;color:var(--ink-2)}
+  .rsummary b{color:var(--ink-1)}
+  .rtable{width:100%;border-collapse:collapse;font-size:.8rem}
+  .rtable th,.rtable td{border:1px solid var(--border);padding:7px 11px}
+  .rtable th{background:var(--surface-1);font-family:ui-monospace,monospace;font-size:.66rem;
+    text-transform:uppercase;letter-spacing:.05em;color:var(--ink-muted);text-align:left}
+  .rtable td.num,.rtable th.num{text-align:right}
+  .signrow{display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px;margin-top:34px}
+  .signbox{border-top:1px solid var(--ink-1);padding-top:7px;font-size:.72rem;color:var(--ink-muted)}
+  .rfoot{margin-top:22px;padding-top:11px;border-top:1px dashed var(--border);font-size:.68rem;
+    color:var(--ink-muted);display:flex;justify-content:space-between}
+
+  @media print{
+    body *{visibility:hidden}
+    .modal,.modal *{visibility:visible}
+    .modal{position:fixed;top:0;left:0;width:100%;max-width:100%;box-shadow:none;border-radius:0}
+    .modalfoot,.closex{display:none}
+    .rdoc{font-size:11pt}
+  }
+
+  @media(max-width:760px){
+    .filegrid{grid-template-columns:1fr}
+    .controls{grid-template-columns:1fr}
+  }
+
+  /* batch dashboard */
+  .batchscreen{display:none}
+  .batchscreen.on{display:block}
+  .batchactions{display:flex;flex-wrap:wrap;gap:10px;margin-top:20px}
+  .batchtable{overflow-x:auto;border:1px solid var(--border);border-radius:10px;margin-top:16px}
+  .batchtable table{min-width:720px}
+  .driftflag{font-family:ui-monospace,monospace;font-size:.72rem;font-weight:700;padding:3px 9px;
+    border-radius:20px;white-space:nowrap}
+  .driftflag.ok{background:var(--good-bg);color:var(--good)}
+  .driftflag.drift{background:var(--crit-bg);color:var(--critical)}
+  .filerow{cursor:default}
+  .batchremove{background:transparent;border:none;color:var(--ink-muted);cursor:pointer;font-size:.9rem}
+  .batchremove:hover{color:var(--critical)}
+  #waterfallCanvas{height:220px}
+  #batchOverlayCanvas{height:300px}
+  .cmp2grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  #cmpChartA, #cmpChartB{height:220px}
+  @media(max-width:760px){ .cmp2grid{grid-template-columns:1fr} }
+</style>
+
+<div class="viz-root">
+  <button class="theme" style="position:fixed;top:14px;right:14px;z-index:9" onclick="var r=document.documentElement,d=r.getAttribute('data-theme')==='dark';r.setAttribute('data-theme',d?'light':'dark')">◐ theme</button>
+
+  <div class="topbar">
+    <span class="brandmark"></span>
+    <div>
+      <div class="brandtext">MB Engineering Data Analyzer</div>
+      <div class="brandsub">Demo · mock data · no AI</div>
+    </div>
+    <button class="switchbtn" style="margin-left:24px" onclick="openBatchScreen()" id="batchNavBtn">🗂 Batch QA Dashboard</button>
+  </div>
+
+  <div class="wrap">
+
+    <div id="introScreen" class="intro">
+      <h1>Upload a test file</h1>
+      <p>Select one of the sample bellows test files below to see the analyzer in action.
+        In production this reads a real Excel export from your test rig — the demo uses
+        realistic synthetic data in the same shape.</p>
+
+      <div class="filegrid">
+        <button class="filecard" onclick="loadDataset('hydro')">
+          <div class="ico">📄</div>
+          <div class="fname">Bellows_Hydro_Test_04.xlsx</div>
+          <div class="fmeta">Hydrostatic Pressure Test · 1.4 MB</div>
+          <span class="ftag">Ramp · Hold · Release</span>
+        </button>
+        <button class="filecard" onclick="loadDataset('fatigue')">
+          <div class="ico">📄</div>
+          <div class="fname">Bellows_Fatigue_Test_11.xlsx</div>
+          <div class="fmeta">Cyclic Fatigue Test · 2.1 MB</div>
+          <span class="ftag">10,000 cycles</span>
+        </button>
+        <button class="filecard" onclick="loadDataset('spring')">
+          <div class="ico">📄</div>
+          <div class="fname">Bellows_SpringRate_B2026-11.xlsx</div>
+          <div class="fmeta">Axial Spring Rate Test · 0.6 MB</div>
+          <span class="ftag">Load / Unload</span>
+        </button>
+      </div>
+
+      <div class="uploadrow" id="uploadDropzone">
+        <div style="font-size:1.3rem">⬆</div>
+        <p style="margin-top:8px;font-weight:600">Or upload your own CSV file</p>
+        <p class="muted" style="font-size:.8rem;margin-top:4px">Drag a file here, or</p>
+        <button class="uploadbtn" style="margin-top:10px" onclick="document.getElementById('csvFileInput').click()">Choose CSV file</button>
+        <input type="file" id="csvFileInput" accept=".csv" style="display:none">
+        <p class="muted" style="font-size:.76rem;margin-top:10px">First row is treated as headers. Numeric
+          columns become chartable variables automatically — try the sample CSVs above, exported as
+          real files, or any test data of your own.</p>
+      </div>
+
+      <section class="panel" style="margin-top:22px;text-align:left">
+        <div class="panelhead"><h2>Compare two test files</h2></div>
+        <p class="muted" style="font-size:.84rem;max-width:60ch">Quick-compare two samples of the same test
+          type, or pick any two files — mock or your own — and see them side by side.</p>
+
+        <div class="batchactions" style="margin-top:14px">
+          <button class="uploadbtn" onclick="comparePair('hydro','hydro2')">Hydro: Test 04 vs Test 09</button>
+          <button class="uploadbtn" onclick="comparePair('fatigue','fatigue2')">Fatigue: Test 11 vs Test 15</button>
+          <button class="uploadbtn" onclick="comparePair('spring','spring2')">Spring Rate: B-11 vs B-14</button>
+        </div>
+
+        <div class="subrow">
+          <div class="field">
+            <label>File A</label>
+            <select id="compareSlotA" onchange="onCompareSlotChange('A')">
+              <option value="hydro">Bellows_Hydro_Test_04.xlsx (mock)</option>
+              <option value="hydro2">Bellows_Hydro_Test_09.xlsx (mock)</option>
+              <option value="fatigue">Bellows_Fatigue_Test_11.xlsx (mock)</option>
+              <option value="fatigue2">Bellows_Fatigue_Test_15.xlsx (mock)</option>
+              <option value="spring">Bellows_SpringRate_B2026-11.xlsx (mock)</option>
+              <option value="spring2">Bellows_SpringRate_B2026-14.xlsx (mock)</option>
+              <option value="upload">Upload your own CSV…</option>
+            </select>
+            <input type="file" id="compareFileA" accept=".csv" style="display:none;margin-top:8px">
+          </div>
+          <div class="field">
+            <label>File B</label>
+            <select id="compareSlotB" onchange="onCompareSlotChange('B')">
+              <option value="hydro">Bellows_Hydro_Test_04.xlsx (mock)</option>
+              <option value="hydro2" selected>Bellows_Hydro_Test_09.xlsx (mock)</option>
+              <option value="fatigue">Bellows_Fatigue_Test_11.xlsx (mock)</option>
+              <option value="fatigue2">Bellows_Fatigue_Test_15.xlsx (mock)</option>
+              <option value="spring">Bellows_SpringRate_B2026-11.xlsx (mock)</option>
+              <option value="spring2">Bellows_SpringRate_B2026-14.xlsx (mock)</option>
+              <option value="upload">Upload your own CSV…</option>
+            </select>
+            <input type="file" id="compareFileB" accept=".csv" style="display:none;margin-top:8px">
+          </div>
+          <button class="genbtn" onclick="runCompareTwo()">Compare</button>
+        </div>
+      </section>
+
+      <div class="parsing" id="parsingRow">
+        <span class="spinner"></span>
+        <span id="parsingText">Reading workbook…</span>
+      </div>
+    </div>
+
+    <div id="workspace" class="workspace">
+
+      <div class="fileinfo">
+        <span class="fn" id="wsFilename"></span>
+        <span class="stat"><b id="wsRows"></b> rows</span>
+        <span class="stat"><b id="wsCols"></b> columns</span>
+        <span class="stat" id="wsSheet"></span>
+        <button class="switchbtn" onclick="backToIntro()">Change file</button>
+      </div>
+      <div class="metarow" id="wsMeta"></div>
+
+      <section class="panel">
+        <div class="panelhead"><h2>Data preview</h2><span class="muted" style="font-size:.78rem">first 15 rows</span></div>
+        <div class="tblwrap"><table id="previewTable"></table></div>
+      </section>
+
+      <section class="panel">
+        <div class="panelhead"><h2>Variable selection</h2></div>
+        <div class="controls">
+          <div class="field">
+            <label>X-axis</label>
+            <select id="xSelect" onchange="onControlsChange()"></select>
+          </div>
+          <div class="field">
+            <label>Y-axis (select up to 4)</label>
+            <div class="ycheck" id="yCheck"></div>
+          </div>
+          <div class="field">
+            <label>Chart type</label>
+            <select id="chartType" onchange="onControlsChange()">
+              <option value="line">Line</option>
+              <option value="scatter">Scatter</option>
+              <option value="bar">Bar (binned by X)</option>
+              <option value="histogram">Histogram (distribution)</option>
+            </select>
+          </div>
+          <button class="genbtn" onclick="onControlsChange()">Generate</button>
+        </div>
+        <div class="normrow"><input type="checkbox" id="normCheck" onchange="onControlsChange()">
+          <label for="normCheck" style="margin:0">Normalize series to % of peak (for comparing different units)</label></div>
+        <div class="normrow"><input type="checkbox" id="trendCheck" onchange="onControlsChange()">
+          <label for="trendCheck" style="margin:0">Show smoothed trend overlay (moving average)</label></div>
+        <div class="normrow"><input type="checkbox" id="outlierCheck" onchange="onControlsChange()">
+          <label for="outlierCheck" style="margin:0">Highlight outliers (beyond 2.5σ) on the primary variable</label></div>
+        <div class="unitnote" id="unitNote" style="display:none"></div>
+
+        <div class="subrow">
+          <div class="field" id="compareField" style="display:none">
+            <label>Compare with</label>
+            <select id="compareSelect" onchange="onControlsChange()"><option value="">None</option></select>
+          </div>
+          <div class="field">
+            <label>Curve fit</label>
+            <select id="fitSelect" onchange="onControlsChange()">
+              <option value="none">None</option>
+              <option value="linear">Linear</option>
+              <option value="poly2">Quadratic</option>
+              <option value="exp">Exponential decay</option>
+            </select>
+          </div>
+        </div>
+        <div class="fitinfo" id="fitInfo"></div>
+      </section>
+
+      <section class="panel chartarea">
+        <div class="panelhead"><h2 id="chartTitle">Chart</h2></div>
+        <div class="chartbox">
+          <canvas id="chartCanvas"></canvas>
+          <div class="tooltip" id="tooltip"></div>
+        </div>
+        <div class="legend" id="legend"></div>
+        <p class="smallnote" id="outlierNote" style="display:none"></p>
+        <p class="smallnote" id="xcorrNote" style="display:none"></p>
+      </section>
+
+      <section class="panel">
+        <div class="panelhead"><h2>Frequency spectrum (FFT)</h2><span class="muted" style="font-size:.78rem" id="fftSubtitle"></span></div>
+        <div class="chartbox"><canvas id="fftCanvas"></canvas></div>
+        <p class="muted" style="font-size:.76rem;margin-top:10px">Magnitude spectrum of the primary selected
+          variable, detrended — most meaningful for cyclic or vibration-type signals.</p>
+        <div class="fftrow"><input type="checkbox" id="spectroCheck" onchange="onControlsChange()">
+          <label for="spectroCheck" style="margin:0">Show spectrogram (how frequency content changes over the test)</label></div>
+        <div class="chartbox" id="spectroBox" style="display:none;margin-top:10px"><canvas id="spectroCanvas"></canvas></div>
+        <div class="fftrow"><input type="checkbox" id="waterfallCheck" onchange="onControlsChange()">
+          <label for="waterfallCheck" style="margin:0">Show waterfall plot (3D-style spectrum evolution)</label></div>
+        <div class="chartbox" id="waterfallBox" style="display:none;margin-top:10px"><canvas id="waterfallCanvas"></canvas></div>
+      </section>
+
+      <section class="panel">
+        <div class="panelhead"><h2>Statistics</h2></div>
+        <div class="statsgrid" id="statsGrid"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panelhead"><h2>Spec compliance</h2></div>
+        <div class="speclimits">
+          <div class="field"><label>Lower limit</label><input class="numinput" type="number" id="specLower" step="any" oninput="onControlsChange(true)"></div>
+          <div class="field"><label>Upper limit</label><input class="numinput" type="number" id="specUpper" step="any" oninput="onControlsChange(true)"></div>
+          <p class="muted" style="font-size:.78rem;max-width:34ch">Applies to the primary (first) selected
+            variable. Leave blank to skip a bound.</p>
+        </div>
+        <div class="specresult" id="specResult"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panelhead"><h2>Filter</h2></div>
+        <div class="filterrow">
+          <div class="field"><label id="filterFromLabel">From</label><input class="numinput" type="number" id="filterFrom" step="any"></div>
+          <div class="field"><label id="filterToLabel">To</label><input class="numinput" type="number" id="filterTo" step="any"></div>
+          <button class="applybtn" onclick="applyFilter()">Apply filter</button>
+          <div class="presetbtns" id="presetBtns"></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panelhead"><h2>Ask a question</h2></div>
+        <div class="qchips" id="qChips"></div>
+        <div class="answers" id="answers"></div>
+        <p class="aihint">These are pre-built questions, computed live from the loaded (and currently
+          filtered) data — no AI involved. The production version lets you type any question in plain
+          English and get the same kind of answer, powered by AI reading these same statistics.</p>
+      </section>
+
+      <div class="actionrow">
+        <button class="actbtn primary" onclick="openReport()">📑 Generate report</button>
+        <button class="actbtn" onclick="downloadCsv()">⬇ Download CSV</button>
+      </div>
+
+    </div>
+
+    <div id="batchScreen" class="batchscreen">
+      <button class="switchbtn" onclick="closeBatchScreen()">← Back</button>
+      <h1 style="margin-top:16px">Batch QA Dashboard</h1>
+      <p style="max-width:70ch;margin-top:8px;color:var(--ink-2)">Load several test files at once and see,
+        at a glance, which ones drifted from the group and which pass a spec limit — this is the workflow
+        that turns single-test charting into an actual QA process.</p>
+
+      <div class="batchactions">
+        <button class="uploadbtn" onclick="loadSampleBatch()">Load 6 sample batches</button>
+        <button class="uploadbtn" onclick="document.getElementById('batchFileInput').click()">Upload multiple CSVs</button>
+        <input type="file" id="batchFileInput" accept=".csv" multiple style="display:none">
+      </div>
+
+      <div id="compareTwoView" style="display:none">
+        <div class="cmp2grid" style="margin-top:22px">
+          <section class="panel" id="cmpPanelA">
+            <div class="panelhead"><h2 id="cmpNameA">File A</h2></div>
+            <div class="metarow" id="cmpMetaA"></div>
+
+            <p class="rsectitle" style="margin-top:14px">Data preview</p>
+            <div class="tblwrap" style="max-height:180px"><table id="cmpPreviewA"></table></div>
+
+            <p class="rsectitle">Variable selection</p>
+            <div class="subrow" style="margin-top:0">
+              <div class="field"><label>X-axis</label><select id="cmpXSelectA" onchange="onCmpControlsChange('A')"></select></div>
+              <div class="field"><label>Y-axis</label><select id="cmpYSelectA" onchange="onCmpControlsChange('A')"></select></div>
+            </div>
+
+            <div class="chartbox" style="margin-top:12px"><canvas id="cmpChartA"></canvas></div>
+            <div class="statsgrid" id="cmpStatsA" style="margin-top:12px"></div>
+
+            <p class="rsectitle">All variables — summary</p>
+            <div class="batchtable"><table id="cmpAllStatsA"></table></div>
+          </section>
+          <section class="panel" id="cmpPanelB">
+            <div class="panelhead"><h2 id="cmpNameB">File B</h2></div>
+            <div class="metarow" id="cmpMetaB"></div>
+
+            <p class="rsectitle" style="margin-top:14px">Data preview</p>
+            <div class="tblwrap" style="max-height:180px"><table id="cmpPreviewB"></table></div>
+
+            <p class="rsectitle">Variable selection</p>
+            <div class="subrow" style="margin-top:0">
+              <div class="field"><label>X-axis</label><select id="cmpXSelectB" onchange="onCmpControlsChange('B')"></select></div>
+              <div class="field"><label>Y-axis</label><select id="cmpYSelectB" onchange="onCmpControlsChange('B')"></select></div>
+            </div>
+
+            <div class="chartbox" style="margin-top:12px"><canvas id="cmpChartB"></canvas></div>
+            <div class="statsgrid" id="cmpStatsB" style="margin-top:12px"></div>
+
+            <p class="rsectitle">All variables — summary</p>
+            <div class="batchtable"><table id="cmpAllStatsB"></table></div>
+          </section>
+        </div>
+
+        <section class="panel" style="margin-top:18px">
+          <div class="panelhead"><h2>Comparison</h2></div>
+          <div class="batchtable"><table id="cmpTable"></table></div>
+          <p class="rsummary" id="cmpSummaryText" style="margin-top:12px"></p>
+        </section>
+
+        <section class="panel" style="margin-top:18px">
+          <div class="panelhead"><h2>Ask about this comparison</h2></div>
+          <div class="qchips" id="cmpQChips"></div>
+          <div class="answers" id="cmpAnswers"></div>
+          <p class="aihint">These are pre-built comparison questions, computed live from both files — no AI
+            involved. The production version lets you type any question in plain English and get the same
+            kind of answer, powered by AI reading these same statistics.</p>
+        </section>
+      </div>
+
+      <section class="panel" id="batchSpecPanel" style="display:none;margin-top:22px">
+        <div class="panelhead"><h2>Spec limit (applied to each file's own primary variable)</h2></div>
+        <div class="speclimits">
+          <div class="field"><label>Lower limit</label><input class="numinput" type="number" id="batchSpecLower" step="any" oninput="renderBatchTable()"></div>
+          <div class="field"><label>Upper limit</label><input class="numinput" type="number" id="batchSpecUpper" step="any" oninput="renderBatchTable()"></div>
+          <p class="muted" style="font-size:.78rem;max-width:34ch">Most meaningful when the loaded files are
+            the same kind of test (same variable, same units).</p>
+        </div>
+      </section>
+
+      <section class="panel" id="batchOverlayPanel" style="display:none;margin-top:18px">
+        <div class="panelhead"><h2>Overlay — all files, normalized</h2></div>
+        <div class="chartbox"><canvas id="batchOverlayCanvas"></canvas></div>
+        <div class="legend" id="batchLegend"></div>
+        <p class="muted" style="font-size:.76rem;margin-top:10px">X = % of test progress, Y = % of each
+          file's own peak — this is what makes files with different lengths and units comparable at a glance.</p>
+      </section>
+
+      <section class="panel" id="batchTablePanel" style="display:none;margin-top:18px">
+        <div class="panelhead"><h2>Summary — all loaded files</h2></div>
+        <div class="batchtable"><table id="batchTable"></table></div>
+      </section>
+
+      <div class="actionrow" id="batchActionsRow" style="display:none">
+        <button class="actbtn primary" onclick="openBatchReport()">📑 Generate batch report</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modalbg" id="reportModal">
+    <div class="modal">
+      <div class="modalhead"><h3>Engineering Analysis Report</h3><button class="closex" onclick="closeReport()">✕</button></div>
+      <div class="modalbody" id="reportBody"></div>
+      <div class="modalfoot">
+        <button class="actbtn primary" onclick="window.print()">🖨 Print / Save as PDF</button>
+        <button class="actbtn" onclick="closeReport()">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function mulberry32(seed){
+  return function(){
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    var t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function gauss(rand, mean, std){
+  var u1 = Math.max(rand(), 1e-9), u2 = rand();
+  var z = Math.sqrt(-2*Math.log(u1)) * Math.cos(2*Math.PI*u2);
+  return mean + z*std;
+}
+function round(v, d){ var p = Math.pow(10,d); return Math.round(v*p)/p; }
+
+var SERIES_COLORS = ['s1','s2','s3','s4'];
+
+var DATASETS = {
+  hydro: {
+    filename: 'Bellows_Hydro_Test_04.xlsx',
+    sheet: 'HydroTest_Log',
+    compareGroup: 'hydro',
+    meta: {Bellows_Model:'MB-EJ-3200', Material:'SS316L', Nominal_Bore:'300 mm', Convolutions:'8',
+      Wall_Thickness:'1.2 mm', Batch:'B-2026-04', Engineer:'R. Sundaram', Standard:'EJMA 10th Ed.',
+      Cal_Cert:'CAL-2026-0231'},
+    columns: [
+      {key:'Time_s', label:'Time', unit:'s', decimals:1, isX:true},
+      {key:'Pressure_bar', label:'Pressure', unit:'bar', decimals:2},
+      {key:'Axial_Displacement_mm', label:'Axial Displacement', unit:'mm', decimals:3},
+      {key:'Hoop_Stress_MPa', label:'Hoop Stress', unit:'MPa', decimals:1},
+      {key:'Temp_C', label:'Temperature', unit:'°C', decimals:2}
+    ],
+    defaultX:'Time_s', defaultY:['Pressure_bar','Hoop_Stress_MPa'],
+    gen: function(){
+      var rand = mulberry32(1337);
+      var rows = [];
+      for (var t=0; t<=100; t+=1){
+        var p;
+        if (t<=30) p = 25*(t/30) - 0.02*Math.pow(30-t,1.2)/10;
+        else if (t<=90) p = 25;
+        else p = 25*(1-(t-90)/10);
+        p = Math.max(0, p + gauss(rand,0,0.06));
+        var disp = Math.max(0, Math.pow(p,1.04)*0.0168 + gauss(rand,0,0.004));
+        var stress = Math.max(0, p*5.05 + gauss(rand,0,0.8));
+        var temp = 24.8 + (t>30&&t<90 ? (t-30)/60*0.9 : (t>=90?0.9-((t-90)/10*0.4):0)) + gauss(rand,0,0.05);
+        if (t===62) p += 0.4;
+        rows.push({Time_s:round(t,1), Pressure_bar:round(p,2), Axial_Displacement_mm:round(disp,3),
+          Hoop_Stress_MPa:round(stress,1), Temp_C:round(temp,2)});
+      }
+      return rows;
+    }
+  },
+  hydro2: {
+    filename: 'Bellows_Hydro_Test_09.xlsx',
+    sheet: 'HydroTest_Log',
+    compareGroup: 'hydro',
+    meta: {Bellows_Model:'MB-EJ-3200', Material:'SS316L', Nominal_Bore:'300 mm', Convolutions:'8',
+      Wall_Thickness:'1.3 mm', Batch:'B-2026-09', Engineer:'S. Iyer', Standard:'EJMA 10th Ed.',
+      Cal_Cert:'CAL-2026-0255'},
+    columns: [
+      {key:'Time_s', label:'Time', unit:'s', decimals:1, isX:true},
+      {key:'Pressure_bar', label:'Pressure', unit:'bar', decimals:2},
+      {key:'Axial_Displacement_mm', label:'Axial Displacement', unit:'mm', decimals:3},
+      {key:'Hoop_Stress_MPa', label:'Hoop Stress', unit:'MPa', decimals:1},
+      {key:'Temp_C', label:'Temperature', unit:'°C', decimals:2}
+    ],
+    defaultX:'Time_s', defaultY:['Pressure_bar','Hoop_Stress_MPa'],
+    gen: function(){
+      var rand = mulberry32(9911);
+      var rows = [];
+      for (var t=0; t<=100; t+=1){
+        var p;
+        if (t<=30) p = 25*(t/30) - 0.02*Math.pow(30-t,1.2)/10;
+        else if (t<=90) p = 25;
+        else p = 25*(1-(t-90)/10);
+        p = Math.max(0, p + gauss(rand,0,0.06));
+        var disp = Math.max(0, Math.pow(p,1.04)*0.0148 + gauss(rand,0,0.004));
+        var stress = Math.max(0, p*4.6 + gauss(rand,0,0.8));
+        var temp = 24.6 + (t>30&&t<90 ? (t-30)/60*0.9 : (t>=90?0.9-((t-90)/10*0.4):0)) + gauss(rand,0,0.05);
+        rows.push({Time_s:round(t,1), Pressure_bar:round(p,2), Axial_Displacement_mm:round(disp,3),
+          Hoop_Stress_MPa:round(stress,1), Temp_C:round(temp,2)});
+      }
+      return rows;
+    }
+  },
+  fatigue: {
+    filename: 'Bellows_Fatigue_Test_11.xlsx',
+    sheet: 'FatigueLog_Summary',
+    compareGroup: 'fatigue',
+    meta: {Bellows_Model:'MB-EJ-2600', Material:'SS321', Nominal_Bore:'250 mm', Convolutions:'6',
+      Batch:'B-2026-07', Engineer:'V. Karthik', Standard:'EJMA 10th Ed. §4.2', Cal_Cert:'CAL-2026-0198',
+      Target_Cycles:'10,000'},
+    columns: [
+      {key:'Cycle_No', label:'Cycle', unit:'', decimals:0, isX:true},
+      {key:'Pressure_Min_bar', label:'Pressure Min', unit:'bar', decimals:2},
+      {key:'Pressure_Max_bar', label:'Pressure Max', unit:'bar', decimals:2},
+      {key:'Stress_Amplitude_MPa', label:'Stress Amplitude', unit:'MPa', decimals:1},
+      {key:'Displacement_mm', label:'Displacement', unit:'mm', decimals:3}
+    ],
+    defaultX:'Cycle_No', defaultY:['Stress_Amplitude_MPa'],
+    gen: function(){
+      var rand = mulberry32(4242);
+      var rows = [];
+      for (var c=0; c<=10000; c+=50){
+        var frac = c/10000;
+        var base = 142.5 - 14*Math.pow(frac,1.6) - (frac>0.8 ? 22*Math.pow((frac-0.8)/0.2,2) : 0);
+        var amp = Math.max(90, base + gauss(rand,0,1.1));
+        var disp = 0.412 - 0.03*Math.pow(frac,1.6) + gauss(rand,0,0.003);
+        var pmin = 2.05 + gauss(rand,0,0.04);
+        var pmax = 24.8 - 0.3*Math.pow(frac,2) + gauss(rand,0,0.05);
+        var status = amp>135 ? 'OK' : (amp>125 ? 'Degrading' : 'Near limit');
+        rows.push({Cycle_No:c, Pressure_Min_bar:round(pmin,2), Pressure_Max_bar:round(pmax,2),
+          Stress_Amplitude_MPa:round(amp,1), Displacement_mm:round(disp,3), Status:status});
+      }
+      return rows;
+    }
+  },
+  fatigue2: {
+    filename: 'Bellows_Fatigue_Test_15.xlsx',
+    sheet: 'FatigueLog_Summary',
+    compareGroup: 'fatigue',
+    meta: {Bellows_Model:'MB-EJ-2600', Material:'SS321', Nominal_Bore:'250 mm', Convolutions:'6',
+      Batch:'B-2026-15', Engineer:'R. Sundaram', Standard:'EJMA 10th Ed. §4.2', Cal_Cert:'CAL-2026-0271',
+      Target_Cycles:'10,000'},
+    columns: [
+      {key:'Cycle_No', label:'Cycle', unit:'', decimals:0, isX:true},
+      {key:'Pressure_Min_bar', label:'Pressure Min', unit:'bar', decimals:2},
+      {key:'Pressure_Max_bar', label:'Pressure Max', unit:'bar', decimals:2},
+      {key:'Stress_Amplitude_MPa', label:'Stress Amplitude', unit:'MPa', decimals:1},
+      {key:'Displacement_mm', label:'Displacement', unit:'mm', decimals:3}
+    ],
+    defaultX:'Cycle_No', defaultY:['Stress_Amplitude_MPa'],
+    gen: function(){
+      var rand = mulberry32(5151);
+      var rows = [];
+      for (var c=0; c<=10000; c+=50){
+        var frac = c/10000;
+        var base = 141 - 6*Math.pow(frac,1.6) - (frac>0.85 ? 9*Math.pow((frac-0.85)/0.15,2) : 0);
+        var amp = Math.max(90, base + gauss(rand,0,1.1));
+        var disp = 0.405 - 0.015*Math.pow(frac,1.6) + gauss(rand,0,0.003);
+        var pmin = 2.05 + gauss(rand,0,0.04);
+        var pmax = 24.8 - 0.15*Math.pow(frac,2) + gauss(rand,0,0.05);
+        var status = amp>135 ? 'OK' : (amp>125 ? 'Degrading' : 'Near limit');
+        rows.push({Cycle_No:c, Pressure_Min_bar:round(pmin,2), Pressure_Max_bar:round(pmax,2),
+          Stress_Amplitude_MPa:round(amp,1), Displacement_mm:round(disp,3), Status:status});
+      }
+      return rows;
+    }
+  },
+  spring: {
+    filename: 'Bellows_SpringRate_B2026-11.xlsx',
+    sheet: 'SpringRate_S03',
+    compareGroup: 'spring',
+    meta: {Bellows_Model:'MB-EJ-1850', Material:'SS321', Batch:'B-2026-11', Sample:'S-03 of 5',
+      Engineer:'K. Elango', Standard:'EJMA 10th Ed. §3.1'},
+    columns: [
+      {key:'Displacement_mm', label:'Displacement', unit:'mm', decimals:2, isX:true},
+      {key:'Force_Loading_N', label:'Force (Loading)', unit:'N', decimals:1},
+      {key:'Force_Unloading_N', label:'Force (Unloading)', unit:'N', decimals:1}
+    ],
+    defaultX:'Displacement_mm', defaultY:['Force_Loading_N','Force_Unloading_N'],
+    gen: function(){
+      var rand = mulberry32(777);
+      var rows = [];
+      var k = 81.4;
+      for (var i=0; i<=32; i++){
+        var d = round(i*0.25,2);
+        var loading = k*d + 3.1*Math.pow(d,1.3) + gauss(rand,0,1.4);
+        var hyst = 26*Math.sin(Math.PI*(d/8));
+        var unloading = Math.max(0, loading - hyst + gauss(rand,0,1.2));
+        if (i===0){loading=0;unloading=0;}
+        rows.push({Displacement_mm:d, Force_Loading_N:round(loading,1), Force_Unloading_N:round(unloading,1)});
+      }
+      return rows;
+    }
+  },
+  spring2: {
+    filename: 'Bellows_SpringRate_B2026-14.xlsx',
+    sheet: 'SpringRate_S01',
+    compareGroup: 'spring',
+    meta: {Bellows_Model:'MB-EJ-1850', Material:'SS321', Batch:'B-2026-14', Sample:'S-01 of 5',
+      Engineer:'K. Elango', Standard:'EJMA 10th Ed. §3.1'},
+    columns: [
+      {key:'Displacement_mm', label:'Displacement', unit:'mm', decimals:2, isX:true},
+      {key:'Force_Loading_N', label:'Force (Loading)', unit:'N', decimals:1},
+      {key:'Force_Unloading_N', label:'Force (Unloading)', unit:'N', decimals:1}
+    ],
+    defaultX:'Displacement_mm', defaultY:['Force_Loading_N','Force_Unloading_N'],
+    gen: function(){
+      var rand = mulberry32(999);
+      var rows = [];
+      var k = 76.8;
+      for (var i=0; i<=32; i++){
+        var d = round(i*0.25,2);
+        var loading = k*d + 2.6*Math.pow(d,1.3) + gauss(rand,0,1.4);
+        var hyst = 22*Math.sin(Math.PI*(d/8));
+        var unloading = Math.max(0, loading - hyst + gauss(rand,0,1.2));
+        if (i===0){loading=0;unloading=0;}
+        rows.push({Displacement_mm:d, Force_Loading_N:round(loading,1), Force_Unloading_N:round(unloading,1)});
+      }
+      return rows;
+    }
+  }
+};
+
+var QUESTIONS = {
+  hydro: [
+    {id:'peakP', label:'What was the peak pressure reached?', fn: function(rows){
+      var m = rows.reduce(function(a,r){return r.Pressure_bar>a.Pressure_bar?r:a;});
+      return 'Peak pressure was <b>'+m.Pressure_bar.toFixed(2)+' bar</b>, reached at t = '+m.Time_s.toFixed(1)+'s.';
+    }},
+    {id:'peakStress', label:'What was the maximum hoop stress?', fn: function(rows){
+      var m = rows.reduce(function(a,r){return r.Hoop_Stress_MPa>a.Hoop_Stress_MPa?r:a;});
+      return 'Maximum hoop stress recorded was <b>'+m.Hoop_Stress_MPa.toFixed(1)+' MPa</b> at t = '+m.Time_s.toFixed(1)+'s.';
+    }},
+    {id:'holdStable', label:'Did displacement stay stable during the hold phase?', fn: function(rows){
+      var hold = rows.filter(function(r){return r.Time_s>=32 && r.Time_s<=88;});
+      if(!hold.length) return 'No data in the hold phase for the current filter range.';
+      var vals = hold.map(function(r){return r.Axial_Displacement_mm;});
+      var mean = vals.reduce(function(a,b){return a+b;},0)/vals.length;
+      var variance = vals.reduce(function(a,b){return a+Math.pow(b-mean,2);},0)/vals.length;
+      var std = Math.sqrt(variance);
+      var stable = std < 0.008;
+      return 'During the hold phase, axial displacement averaged <b>'+mean.toFixed(3)+' mm</b> with a std. deviation of '
+        +std.toFixed(4)+' mm — '+(stable?'stayed stable, no signs of creep.':'showed some drift, worth a closer look.');
+    }},
+    {id:'summary', label:'Summarize this test', fn: function(rows){
+      var maxP = Math.max.apply(null, rows.map(function(r){return r.Pressure_bar;}));
+      var maxS = Math.max.apply(null, rows.map(function(r){return r.Hoop_Stress_MPa;}));
+      var maxT = Math.max.apply(null, rows.map(function(r){return r.Temp_C;}));
+      return 'Hydrostatic test reached a peak pressure of <b>'+maxP.toFixed(2)+' bar</b> with a maximum hoop stress of <b>'
+        +maxS.toFixed(1)+' MPa</b>. Temperature rose to <b>'+maxT.toFixed(2)+'°C</b> during the hold phase. No abnormal readings detected.';
+    }}
+  ],
+  fatigue: [
+    {id:'cycles', label:'How many cycles were completed?', fn: function(rows){
+      var m = Math.max.apply(null, rows.map(function(r){return r.Cycle_No;}));
+      return 'The logged data covers <b>'+m.toLocaleString()+' cycles</b> of the fatigue test.';
+    }},
+    {id:'threshold', label:'At what cycle did stress amplitude drop below 130 MPa?', fn: function(rows){
+      var hit = rows.find(function(r){return r.Stress_Amplitude_MPa < 130;});
+      if(!hit) return 'Stress amplitude did not drop below 130 MPa in the current data range.';
+      return 'Stress amplitude first dropped below 130 MPa at <b>cycle '+hit.Cycle_No.toLocaleString()+'</b> ('+hit.Stress_Amplitude_MPa.toFixed(1)+' MPa).';
+    }},
+    {id:'degrading', label:'Is the bellows showing signs of fatigue degradation?', fn: function(rows){
+      var n = rows.length; if(n<10) return 'Not enough data in this range to judge a trend.';
+      var firstTen = rows.slice(0, Math.ceil(n*0.1));
+      var lastTen = rows.slice(-Math.ceil(n*0.1));
+      var avg = function(a){return a.reduce(function(s,r){return s+r.Stress_Amplitude_MPa;},0)/a.length;};
+      var a0 = avg(firstTen), a1 = avg(lastTen);
+      var pct = ((a0-a1)/a0*100);
+      return pct>5
+        ? 'Yes — stress amplitude has dropped <b>'+pct.toFixed(1)+'%</b> from the start of the test ('+a0.toFixed(1)+' → '+a1.toFixed(1)+' MPa), consistent with fatigue softening.'
+        : 'No significant degradation yet — stress amplitude has only changed '+pct.toFixed(1)+'% across the current range.';
+    }},
+    {id:'summary2', label:'Summarize this test', fn: function(rows){
+      var last = rows[rows.length-1];
+      return 'Fatigue test logged through cycle <b>'+last.Cycle_No.toLocaleString()+'</b>. Current status: <b>'+last.Status+'</b>, with stress amplitude at '+last.Stress_Amplitude_MPa.toFixed(1)+' MPa, down from an initial ~142 MPa.';
+    }}
+  ],
+  spring: [
+    {id:'rate', label:'What is the average spring rate?', fn: function(rows){
+      var xs = rows.map(function(r){return r.Displacement_mm;});
+      var ys = rows.map(function(r){return r.Force_Loading_N;});
+      var n = xs.length;
+      var sx=0,sy=0,sxy=0,sxx=0;
+      for(var i=0;i<n;i++){sx+=xs[i];sy+=ys[i];sxy+=xs[i]*ys[i];sxx+=xs[i]*xs[i];}
+      var slope = (n*sxy - sx*sy)/(n*sxx - sx*sx);
+      return 'The average spring rate (loading) is approximately <b>'+slope.toFixed(1)+' N/mm</b>, based on a linear fit across the tested range.';
+    }},
+    {id:'hyst', label:'How much hysteresis (energy loss) was observed?', fn: function(rows){
+      var maxD = Math.max.apply(null, rows.map(function(r){return r.Displacement_mm;}));
+      var gaps = rows.map(function(r){return r.Force_Loading_N - r.Force_Unloading_N;});
+      var maxGap = Math.max.apply(null, gaps);
+      var avgGap = gaps.reduce(function(a,b){return a+b;},0)/gaps.length;
+      return 'Loading and unloading curves diverge by an average of <b>'+avgGap.toFixed(1)+' N</b>, peaking around <b>'
+        +maxGap.toFixed(1)+' N</b> mid-stroke — a normal hysteresis loop, not indicative of damage.';
+    }},
+    {id:'summary3', label:'Summarize this test', fn: function(rows){
+      var maxD = Math.max.apply(null, rows.map(function(r){return r.Displacement_mm;}));
+      var maxF = Math.max.apply(null, rows.map(function(r){return r.Force_Loading_N;}));
+      return 'Spring rate test covered 0–<b>'+maxD.toFixed(2)+' mm</b> of axial displacement, reaching <b>'+maxF.toFixed(1)+' N</b> at full deflection, with a typical hysteresis loop between loading and unloading.';
+    }}
+  ]
+};
+
+var state = { key:null, cfg:null, rows:[], filtered:[], xKey:'', yKeys:[], chartType:'line',
+  visibleSeries:[], normalize:false, trend:false, compareKey:'', fitType:'none', showOutliers:false,
+  showSpectrogram:false, showWaterfall:false };
+
+/* ---- small math library: regression, R², cross-correlation ---- */
+function solveLinear(A, b){
+  var n = b.length;
+  var M = A.map(function(row,i){ return row.slice().concat([b[i]]); });
+  for (var col=0; col<n; col++){
+    var piv = col;
+    for (var r=col+1; r<n; r++){ if (Math.abs(M[r][col])>Math.abs(M[piv][col])) piv=r; }
+    var tmp = M[col]; M[col]=M[piv]; M[piv]=tmp;
+    if (Math.abs(M[col][col])<1e-12) continue;
+    for (r=0; r<n; r++){
+      if (r===col) continue;
+      var factor = M[r][col]/M[col][col];
+      for (var c2=col; c2<=n; c2++){ M[r][c2] -= factor*M[col][c2]; }
+    }
+  }
+  return M.map(function(row,i){ return Math.abs(row[i])<1e-12 ? 0 : row[n]/row[i]; });
+}
+
+function polyFit(xs, ys, degree){
+  var n = xs.length, terms = degree+1;
+  var A = []; for (var i=0;i<terms;i++){ A.push(new Array(terms).fill(0)); }
+  var b = new Array(terms).fill(0);
+  for (var i2=0;i2<n;i2++){
+    var powsX = [1]; for (var p=1;p<=degree*2;p++){ powsX.push(powsX[p-1]*xs[i2]); }
+    for (var r=0;r<terms;r++){
+      b[r] += powsX[r]*ys[i2];
+      for (var c=0;c<terms;c++){ A[r][c] += powsX[r+c]; }
+    }
+  }
+  var coeffs = solveLinear(A, b);
+  return function(x){
+    var y=0, px=1;
+    for (var k=0;k<terms;k++){ y += coeffs[k]*px; px*=x; }
+    return y;
+  };
+}
+
+function expFit(xs, ys){
+  var pairs = xs.map(function(x,i){ return {x:x, y:ys[i]}; }).filter(function(p){ return p.y>0; });
+  if (pairs.length < 3) return null;
+  var lx = pairs.map(function(p){return p.x;});
+  var ly = pairs.map(function(p){return Math.log(p.y);});
+  var n = lx.length, sx=0,sy=0,sxy=0,sxx=0;
+  for (var i=0;i<n;i++){ sx+=lx[i]; sy+=ly[i]; sxy+=lx[i]*ly[i]; sxx+=lx[i]*lx[i]; }
+  var b = (n*sxy - sx*sy)/(n*sxx - sx*sx);
+  var a = Math.exp((sy - b*sx)/n);
+  return {fn: function(x){ return a*Math.exp(b*x); }, a:a, b:b};
+}
+
+function computeR2(actualYs, predictedYs){
+  var mean = actualYs.reduce(function(a,b){return a+b;},0)/actualYs.length;
+  var ssTot=0, ssRes=0;
+  for (var i=0;i<actualYs.length;i++){
+    ssTot += Math.pow(actualYs[i]-mean,2);
+    ssRes += Math.pow(actualYs[i]-predictedYs[i],2);
+  }
+  return ssTot>0 ? 1 - ssRes/ssTot : 1;
+}
+
+function computeFit(pts, type){
+  if (type==='none' || pts.length<3) return null;
+  var xs = pts.map(function(p){return p.x;}), ys = pts.map(function(p){return p.y;});
+  if (type==='linear'){
+    var f = polyFit(xs, ys, 1);
+    var r2 = computeR2(ys, xs.map(f));
+    return {fn:f, r2:r2, label:'linear'};
+  }
+  if (type==='poly2'){
+    var f2 = polyFit(xs, ys, 2);
+    var r2b = computeR2(ys, xs.map(f2));
+    return {fn:f2, r2:r2b, label:'quadratic'};
+  }
+  if (type==='exp'){
+    var ef = expFit(xs, ys);
+    if (!ef) return null;
+    var r2c = computeR2(ys, xs.map(ef.fn));
+    return {fn:ef.fn, r2:r2c, label:'exponential', a:ef.a, b:ef.b};
+  }
+  return null;
+}
+
+function crossCorrelate(a, b, maxLag){
+  function pearson(x, y){
+    var n = x.length;
+    var mx = x.reduce(function(s,v){return s+v;},0)/n;
+    var my = y.reduce(function(s,v){return s+v;},0)/n;
+    var num=0, dx=0, dy=0;
+    for (var i=0;i<n;i++){ num += (x[i]-mx)*(y[i]-my); dx += Math.pow(x[i]-mx,2); dy += Math.pow(y[i]-my,2); }
+    return (dx>0 && dy>0) ? num/Math.sqrt(dx*dy) : 0;
+  }
+  var best = {lag:0, r:0};
+  for (var lag=-maxLag; lag<=maxLag; lag++){
+    var xs=[], ys=[];
+    for (var i=0;i<a.length;i++){
+      var j = i+lag;
+      if (j>=0 && j<b.length){ xs.push(a[i]); ys.push(b[j]); }
+    }
+    if (xs.length < a.length*0.5) continue;
+    var r = pearson(xs, ys);
+    if (Math.abs(r) > Math.abs(best.r)) best = {lag:lag, r:r};
+  }
+  return best;
+}
+
+var GENERIC_QUESTIONS = [
+  {id:'gpeak', label:'What is the peak value?', fn: function(rows){
+    var k = state.yKeys[0]; if(!k) return 'Select a variable first.';
+    var col = colFor(k), d = col.decimals!=null?col.decimals:2;
+    var m = rows.reduce(function(a,r){return r[k]>a[k]?r:a;});
+    return 'Peak '+col.label+' was <b>'+m[k].toFixed(d)+(col.unit?' '+col.unit:'')+'</b>, at '+labelFor(state.xKey)+' = '+formatTick(m[state.xKey])+'.';
+  }},
+  {id:'gavg', label:'What is the average value?', fn: function(rows){
+    var k = state.yKeys[0]; if(!k) return 'Select a variable first.';
+    var col = colFor(k), d = col.decimals!=null?col.decimals:2;
+    var vals = rows.map(function(r){return r[k];});
+    var mean = vals.reduce(function(a,b){return a+b;},0)/vals.length;
+    return 'The average '+col.label+' across '+rows.length.toLocaleString()+' rows is <b>'+mean.toFixed(d)+(col.unit?' '+col.unit:'')+'</b>.';
+  }},
+  {id:'gtrend', label:'Is there an upward or downward trend?', fn: function(rows){
+    var k = state.yKeys[0]; if(!k) return 'Select a variable first.';
+    var col = colFor(k);
+    var sorted = rows.slice().sort(function(a,b){return a[state.xKey]-b[state.xKey];});
+    var n = sorted.length; if(n<6) return 'Not enough data in this range to judge a trend.';
+    var firstTen = sorted.slice(0, Math.ceil(n*0.1));
+    var lastTen = sorted.slice(-Math.ceil(n*0.1));
+    var avg = function(a){return a.reduce(function(s,r){return s+r[k];},0)/a.length;};
+    var a0 = avg(firstTen), a1 = avg(lastTen);
+    var pct = a0!==0 ? ((a1-a0)/Math.abs(a0)*100) : 0;
+    var dir = pct>3 ? 'an upward' : (pct<-3 ? 'a downward' : 'no significant');
+    return 'Comparing the start and end of the range shows <b>'+dir+' trend</b> in '+col.label+' ('+(pct>=0?'+':'')+pct.toFixed(1)+'%).';
+  }}
+];
+function questionsFor(key){
+  if (key==='custom') return GENERIC_QUESTIONS;
+  if (QUESTIONS[key]) return QUESTIONS[key];
+  var group = DATASETS[key] && DATASETS[key].compareGroup;
+  return QUESTIONS[group] || GENERIC_QUESTIONS;
+}
+
+function parseCSV(text){
+  var lines = text.replace(/\r/g,'').split('\n').filter(function(l){return l.trim().length;});
+  if (!lines.length) return {headers:[], rows:[]};
+  var headers = lines[0].split(',').map(function(h){return h.trim();});
+  var rows = lines.slice(1).map(function(line){
+    var cells = line.split(',');
+    var obj = {};
+    headers.forEach(function(h,i){
+      var raw = (cells[i]!==undefined ? cells[i] : '').trim();
+      var isNum = raw!=='' && /^-?\d+(\.\d+)?$/.test(raw);
+      obj[h] = isNum ? parseFloat(raw) : raw;
+    });
+    return obj;
+  });
+  return {headers:headers, rows:rows};
+}
+
+function inferColumns(headers, rows){
+  return headers.map(function(h,i){
+    var sample = rows.slice(0,25).map(function(r){return r[h];});
+    var numericCount = sample.filter(function(v){return typeof v==='number';}).length;
+    var isNumeric = sample.length>0 && numericCount >= sample.length*0.7;
+    var decimals = 2;
+    if (isNumeric){
+      var fracDigits = sample.filter(function(v){return typeof v==='number';}).map(function(v){
+        var s = String(v), idx = s.indexOf('.');
+        return idx>=0 ? s.length-idx-1 : 0;
+      });
+      decimals = fracDigits.length ? Math.min(4, Math.max.apply(null, fracDigits)) : 2;
+    }
+    var unitMatch = h.match(/\(([^)]+)\)/);
+    var label = h.replace(/\([^)]*\)/,'').trim() || h;
+    return {key:h, label:label, unit: unitMatch?unitMatch[1]:'', decimals: isNumeric?decimals:null,
+      isX: i===0, _numeric: isNumeric};
+  });
+}
+
+function handleFileUpload(file){
+  document.getElementById('parsingText').textContent = 'Reading '+file.name+'…';
+  document.getElementById('parsingRow').classList.add('on');
+  var reader = new FileReader();
+  reader.onload = function(e){
+    setTimeout(function(){
+      document.getElementById('parsingText').textContent = 'Detecting columns…';
+      setTimeout(function(){
+        var parsed = parseCSV(String(e.target.result));
+        var columns = inferColumns(parsed.headers, parsed.rows);
+        var numericCols = columns.filter(function(c){return c._numeric;});
+        document.getElementById('parsingRow').classList.remove('on');
+        if (!parsed.rows.length || numericCols.length<1){
+          alert('Could not detect any numeric columns in this file. Make sure the first row is a header row.');
+          return;
+        }
+        var xCol = columns[0];
+        var yDefaults = numericCols.filter(function(c){return c.key!==xCol.key;}).slice(0,2).map(function(c){return c.key;});
+        if (!yDefaults.length) yDefaults = [numericCols[0].key];
+        DATASETS.custom = {
+          filename: file.name,
+          sheet: 'Sheet1',
+          meta: {Rows_detected: parsed.rows.length, Columns_detected: parsed.headers.length,
+            Uploaded: new Date().toLocaleString()},
+          columns: columns,
+          defaultX: xCol.key,
+          defaultY: yDefaults,
+          gen: function(){ return parsed.rows; }
+        };
+        initWorkspace('custom');
+      }, 350);
+    }, 300);
+  };
+  reader.readAsText(file);
+}
+
+function loadDataset(key){
+  document.getElementById('parsingText').textContent = 'Reading workbook…';
+  document.getElementById('parsingRow').classList.add('on');
+  setTimeout(function(){ document.getElementById('parsingText').textContent = 'Detecting columns…'; }, 380);
+  setTimeout(function(){
+    document.getElementById('parsingRow').classList.remove('on');
+    initWorkspace(key);
+  }, 820);
+}
+
+function backToIntro(){
+  document.getElementById('workspace').classList.remove('on');
+  document.getElementById('introScreen').style.display = '';
+}
+
+function initWorkspace(key){
+  var cfg = DATASETS[key];
+  var rows = cfg.gen();
+  state.key = key; state.cfg = cfg; state.rows = rows; state.filtered = rows.slice();
+  state.xKey = cfg.defaultX; state.yKeys = cfg.defaultY.slice();
+  state.visibleSeries = cfg.defaultY.slice();
+  state.chartType = 'line'; state.normalize = cfg.defaultY.length>1;
+  state.trend = false; state.compareKey = ''; state.fitType = 'none';
+  state.showOutliers = false; state.showSpectrogram = false;
+
+  document.getElementById('introScreen').style.display = 'none';
+  document.getElementById('workspace').classList.add('on');
+  document.getElementById('wsFilename').textContent = cfg.filename;
+  document.getElementById('wsRows').textContent = rows.length.toLocaleString();
+  document.getElementById('wsCols').textContent = cfg.columns.length + (key==='fatigue'||key==='fatigue2'?1:0);
+  document.getElementById('wsSheet').textContent = 'Sheet: ' + cfg.sheet;
+
+  var metaRow = document.getElementById('wsMeta');
+  metaRow.innerHTML = Object.keys(cfg.meta).map(function(k){
+    return '<span class="metachip">'+k.replace(/_/g,' ')+': '+cfg.meta[k]+'</span>';
+  }).join('');
+
+  document.getElementById('trendCheck').checked = false;
+  document.getElementById('outlierCheck').checked = false;
+  document.getElementById('spectroCheck').checked = false;
+  document.getElementById('waterfallCheck').checked = false;
+  document.getElementById('fitSelect').value = 'none';
+  document.getElementById('specLower').value = '';
+  document.getElementById('specUpper').value = '';
+  document.getElementById('spectroBox').style.display = 'none';
+  document.getElementById('waterfallBox').style.display = 'none';
+
+  var compareField = document.getElementById('compareField');
+  var compareSelect = document.getElementById('compareSelect');
+  var siblings = cfg.compareGroup ? Object.keys(DATASETS).filter(function(k){
+    return k!==key && DATASETS[k].compareGroup===cfg.compareGroup;
+  }) : [];
+  if (siblings.length){
+    compareField.style.display = '';
+    compareSelect.innerHTML = '<option value="">None</option>' + siblings.map(function(k){
+      return '<option value="'+k+'">'+DATASETS[k].filename+' ('+DATASETS[k].meta.Batch+')</option>';
+    }).join('');
+  } else {
+    compareField.style.display = 'none';
+    compareSelect.innerHTML = '<option value="">None</option>';
+  }
+
+  renderPreview();
+  renderControls();
+  renderFilterDefaults();
+  renderQuestions();
+  document.getElementById('answers').innerHTML = '';
+  onControlsChange();
+}
+
+function renderPreview(){
+  var cfg = state.cfg, rows = state.rows.slice(0,15);
+  var cols = cfg.columns.slice();
+  if (state.key==='fatigue'||state.key==='fatigue2') cols = cols.concat([{key:'Status',label:'Status',decimals:null}]);
+  var thead = '<thead><tr>' + cols.map(function(c){return '<th>'+c.label+(c.unit?' ('+c.unit+')':'')+'</th>';}).join('') + '</tr></thead>';
+  var tbody = '<tbody>' + rows.map(function(r){
+    return '<tr>' + cols.map(function(c){
+      var v = r[c.key];
+      if (c.key==='Status'){
+        var cls = v==='OK'?'status-ok':(v==='Degrading'?'status-warn':'status-crit');
+        return '<td class="'+cls+'">'+v+'</td>';
+      }
+      return '<td class="num">'+(c.decimals!=null?v.toFixed(c.decimals):v)+'</td>';
+    }).join('') + '</tr>';
+  }).join('') + '</tbody>';
+  document.getElementById('previewTable').innerHTML = thead+tbody;
+}
+
+function renderControls(){
+  var cfg = state.cfg;
+  var xSel = document.getElementById('xSelect');
+  xSel.innerHTML = cfg.columns.filter(function(c){return c._numeric!==false;}).map(function(c){
+    return '<option value="'+c.key+'"'+(c.key===state.xKey?' selected':'')+'>'+c.label+(c.unit?' ('+c.unit+')':'')+'</option>';
+  }).join('');
+
+  var yWrap = document.getElementById('yCheck');
+  yWrap.innerHTML = cfg.columns.filter(function(c){return !c.isX && c._numeric!==false;}).map(function(c,i){
+    var checked = state.yKeys.indexOf(c.key)>=0;
+    var colorIdx = state.yKeys.indexOf(c.key);
+    var swColor = colorIdx>=0 ? 'var(--'+SERIES_COLORS[colorIdx]+')' : 'var(--ink-muted)';
+    return '<label class="ychip"><input type="checkbox" value="'+c.key+'" '+(checked?'checked':'')+
+      ' onchange="onYToggle(this)"><span class="sw" style="background:'+swColor+'"></span>'+c.label+'</label>';
+  }).join('');
+  document.getElementById('normCheck').checked = state.normalize;
+}
+
+function onYToggle(el){
+  var k = el.value;
+  if (el.checked){
+    if (state.yKeys.length>=4){ el.checked=false; return; }
+    state.yKeys.push(k);
+  } else {
+    state.yKeys = state.yKeys.filter(function(x){return x!==k;});
+  }
+  renderControls();
+}
+
+function renderFilterDefaults(){
+  var cfg = state.cfg;
+  var xcol = cfg.columns.filter(function(c){return c.key===state.xKey;})[0] || cfg.columns[0];
+  var vals = state.rows.map(function(r){return r[state.xKey];});
+  var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+  document.getElementById('filterFromLabel').textContent = 'From ('+xcol.label+')';
+  document.getElementById('filterToLabel').textContent = 'To ('+xcol.label+')';
+  document.getElementById('filterFrom').value = min;
+  document.getElementById('filterTo').value = max;
+  document.getElementById('filterFrom').min = min; document.getElementById('filterFrom').max = max;
+  document.getElementById('filterTo').min = min; document.getElementById('filterTo').max = max;
+
+  var presets = document.getElementById('presetBtns');
+  var full = min+'|'+max;
+  var opts = [{label:'All', from:min, to:max}];
+  if (state.key==='fatigue'||state.key==='fatigue2'){
+    opts.push({label:'First 20%', from:min, to:min+(max-min)*0.2});
+    opts.push({label:'Last 20%', from:max-(max-min)*0.2, to:max});
+  } else if (state.key==='hydro'||state.key==='hydro2'){
+    opts.push({label:'Ramp-up', from:0, to:30});
+    opts.push({label:'Hold phase', from:30, to:90});
+    opts.push({label:'Release', from:90, to:100});
+  } else {
+    opts.push({label:'First half', from:min, to:min+(max-min)*0.5});
+    opts.push({label:'Second half', from:min+(max-min)*0.5, to:max});
+  }
+  presets.innerHTML = opts.map(function(o,i){
+    return '<button type="button" class="presetbtn'+(i===0?' active':'')+'" onclick="presetFilter('+o.from+','+o.to+',this)">'+o.label+'</button>';
+  }).join('');
+}
+
+function presetFilter(from, to, btn){
+  document.getElementById('filterFrom').value = from;
+  document.getElementById('filterTo').value = to;
+  Array.prototype.forEach.call(btn.parentElement.children, function(b){b.classList.remove('active');});
+  btn.classList.add('active');
+  applyFilter();
+}
+
+function applyFilter(){
+  var from = parseFloat(document.getElementById('filterFrom').value);
+  var to = parseFloat(document.getElementById('filterTo').value);
+  state.filtered = state.rows.filter(function(r){ return r[state.xKey]>=from && r[state.xKey]<=to; });
+  onControlsChange(true);
+}
+
+function onControlsChange(skipCtrlRead){
+  if (!skipCtrlRead){
+    state.xKey = document.getElementById('xSelect').value;
+    state.chartType = document.getElementById('chartType').value;
+  }
+  state.normalize = document.getElementById('normCheck').checked;
+  state.trend = document.getElementById('trendCheck').checked;
+  state.showOutliers = document.getElementById('outlierCheck').checked;
+  state.compareKey = document.getElementById('compareSelect').value;
+  state.fitType = document.getElementById('fitSelect').value;
+  state.showSpectrogram = document.getElementById('spectroCheck').checked;
+  state.showWaterfall = document.getElementById('waterfallCheck').checked;
+  if (state.yKeys.length===0){ state.yKeys=[state.cfg.defaultY[0]]; }
+  state.visibleSeries = state.visibleSeries.filter(function(k){return state.yKeys.indexOf(k)>=0;});
+  state.yKeys.forEach(function(k){ if(state.visibleSeries.indexOf(k)<0) state.visibleSeries.push(k); });
+
+  var units = uniqueUnits();
+  var note = document.getElementById('unitNote');
+  if (units.length>1 && !state.normalize){
+    note.style.display='block';
+    note.textContent = 'Note: selected series use different units ('+units.join(', ')+') shown on a shared scale — consider normalizing.';
+  } else { note.style.display='none'; }
+
+  document.getElementById('chartTitle').textContent =
+    state.yKeys.map(labelFor).join(' & ') + ' vs ' + labelFor(state.xKey);
+
+  document.getElementById('spectroBox').style.display = state.showSpectrogram ? '' : 'none';
+  document.getElementById('waterfallBox').style.display = state.showWaterfall ? '' : 'none';
+
+  drawChart();
+  drawSpectrum();
+  if (state.showSpectrogram) drawSpectrogram();
+  if (state.showWaterfall) drawWaterfall();
+  renderLegend();
+  renderStats();
+  renderControls();
+  renderFitInfo();
+  renderOutlierNote();
+  renderXcorrNote();
+  renderSpecCompliance();
+}
+
+function primarySeries(){
+  var rows = state.filtered.length ? state.filtered : state.rows;
+  var k = state.yKeys[0];
+  if (!k) return null;
+  var sorted = rows.slice().sort(function(a,b){return a[state.xKey]-b[state.xKey];});
+  return {key:k, col:colFor(k), pts: sorted.map(function(r){return {x:r[state.xKey], y:r[k]};})};
+}
+
+function renderFitInfo(){
+  var el = document.getElementById('fitInfo');
+  if (state.fitType==='none'){ el.textContent=''; return; }
+  var prim = primarySeries();
+  if (!prim){ el.textContent=''; return; }
+  var fit = computeFit(prim.pts, state.fitType);
+  if (!fit){ el.textContent = 'Not enough valid data points for this fit.'; return; }
+  var eqLabel = fit.label==='exponential'
+    ? 'y = '+fit.a.toFixed(3)+' · e^('+fit.b.toFixed(5)+'x)'
+    : (fit.label==='linear' ? 'linear fit' : 'quadratic fit');
+  el.innerHTML = 'Fit ('+fit.label+') on '+prim.col.label+': <b>'+eqLabel+'</b>, R² = <b>'+fit.r2.toFixed(3)+'</b>';
+}
+
+function renderOutlierNote(){
+  var el = document.getElementById('outlierNote');
+  if (!state.showOutliers){ el.style.display='none'; return; }
+  var prim = primarySeries();
+  if (!prim || prim.pts.length<5){ el.style.display='none'; return; }
+  var ys = prim.pts.map(function(p){return p.y;});
+  var mean = ys.reduce(function(a,b){return a+b;},0)/ys.length;
+  var std = Math.sqrt(ys.reduce(function(a,b){return a+Math.pow(b-mean,2);},0)/ys.length);
+  var outliers = prim.pts.filter(function(p){ return Math.abs(p.y-mean) > 2.5*std; });
+  el.style.display='block';
+  el.innerHTML = outliers.length
+    ? '<b>'+outliers.length+' outlier'+(outliers.length>1?'s':'')+'</b> detected in '+prim.col.label+
+      ' (beyond 2.5σ from the mean) — marked on the chart in red.'
+    : 'No outliers detected in '+prim.col.label+' beyond 2.5σ.';
+}
+
+function renderXcorrNote(){
+  var el = document.getElementById('xcorrNote');
+  var visKeys = state.yKeys.filter(function(k){return state.visibleSeries.indexOf(k)>=0;});
+  if (visKeys.length!==2){ el.style.display='none'; return; }
+  var rows = state.filtered.length ? state.filtered : state.rows;
+  var sorted = rows.slice().sort(function(a,b){return a[state.xKey]-b[state.xKey];});
+  if (sorted.length<10){ el.style.display='none'; return; }
+  var a = sorted.map(function(r){return r[visKeys[0]];});
+  var b = sorted.map(function(r){return r[visKeys[1]];});
+  var maxLag = Math.max(1, Math.min(20, Math.floor(sorted.length*0.15)));
+  var res = crossCorrelate(a, b, maxLag);
+  el.style.display='block';
+  if (res.lag===0){
+    el.innerHTML = '<b>Signal relationship:</b> '+labelFor(visKeys[0])+' and '+labelFor(visKeys[1])+
+      ' are most correlated with no lag (r = '+res.r.toFixed(2)+') — they move together.';
+  } else {
+    el.innerHTML = '<b>Signal relationship:</b> '+labelFor(visKeys[1])+' is most correlated with '+labelFor(visKeys[0])+
+      ' at a lag of <b>'+res.lag+' sample'+(Math.abs(res.lag)>1?'s':'')+'</b> (r = '+res.r.toFixed(2)+').';
+  }
+}
+
+function renderSpecCompliance(){
+  var lowerRaw = document.getElementById('specLower').value;
+  var upperRaw = document.getElementById('specUpper').value;
+  var lower = lowerRaw!=='' ? parseFloat(lowerRaw) : null;
+  var upper = upperRaw!=='' ? parseFloat(upperRaw) : null;
+  var el = document.getElementById('specResult');
+  if (lower===null && upper===null){ el.innerHTML=''; return; }
+  var prim = primarySeries();
+  if (!prim){ el.innerHTML=''; return; }
+  var violations = prim.pts.filter(function(p){
+    return (lower!==null && p.y<lower) || (upper!==null && p.y>upper);
+  });
+  var pass = violations.length===0;
+  var worst = violations.length ? violations.reduce(function(a,b){
+    var da = Math.max(lower!==null?lower-a.y:0, upper!==null?a.y-upper:0);
+    var db = Math.max(lower!==null?lower-b.y:0, upper!==null?b.y-upper:0);
+    return db>da ? b : a;
+  }) : null;
+  var d = prim.col.decimals!=null ? prim.col.decimals : 2;
+  el.innerHTML = '<span class="badge '+(pass?'pass':'fail')+'">'+(pass?'✓ PASS':'✕ FAIL')+'</span>'+
+    '<span class="detail">'+prim.col.label+' checked against '+
+    (lower!==null?('≥ '+lower.toFixed(d)+' '+(prim.col.unit||'')):'')+
+    (lower!==null&&upper!==null?' and ':'')+
+    (upper!==null?('≤ '+upper.toFixed(d)+' '+(prim.col.unit||'')):'')+
+    (pass ? ' — all '+prim.pts.length+' points within limits.'
+      : ' — '+violations.length+' of '+prim.pts.length+' points out of range (worst: '+worst.y.toFixed(d)+' '+(prim.col.unit||'')+').')+
+    '</span>';
+}
+
+function uniqueUnits(){
+  var u = {};
+  state.yKeys.forEach(function(k){ var c = colFor(k); u[c.unit||''] = true; });
+  return Object.keys(u).filter(Boolean);
+}
+function colFor(key){ return state.cfg.columns.filter(function(c){return c.key===key;})[0] || {label:key,unit:''}; }
+function labelFor(key){ return colFor(key).label; }
+
+function renderLegend(){
+  var wrap = document.getElementById('legend');
+  var items = state.yKeys.length<2 ? [] : state.yKeys.map(function(k,i){
+    var on = state.visibleSeries.indexOf(k)>=0;
+    return '<div class="legitem'+(on?'':' off')+'" onclick="toggleSeries(\''+k+'\')">'+
+      '<span class="sw" style="background:var(--'+SERIES_COLORS[i]+')"></span>'+labelFor(k)+'</div>';
+  });
+  if (state.compareKey && DATASETS[state.compareKey]){
+    items.push('<div class="legitem"><span class="sw" style="background:var(--cmp)"></span>Compare: '+
+      DATASETS[state.compareKey].filename+'</div>');
+  }
+  wrap.innerHTML = items.join('');
+}
+function toggleSeries(k){
+  var idx = state.visibleSeries.indexOf(k);
+  if (idx>=0) state.visibleSeries.splice(idx,1); else state.visibleSeries.push(k);
+  drawChart(); drawSpectrum();
+  if (state.showSpectrogram) drawSpectrogram();
+  if (state.showWaterfall) drawWaterfall();
+  renderLegend(); renderStats(); renderFitInfo(); renderOutlierNote(); renderXcorrNote(); renderSpecCompliance();
+}
+
+function renderStats(){
+  var grid = document.getElementById('statsGrid');
+  var rows = state.filtered;
+  grid.innerHTML = state.yKeys.map(function(k,i){
+    var vals = rows.map(function(r){return r[k];}).filter(function(v){return typeof v==='number';});
+    if(!vals.length) return '';
+    var sorted = vals.slice().sort(function(a,b){return a-b;});
+    var sum = vals.reduce(function(a,b){return a+b;},0);
+    var mean = sum/vals.length;
+    var median = sorted.length%2 ? sorted[(sorted.length-1)/2] : (sorted[sorted.length/2-1]+sorted[sorted.length/2])/2;
+    var variance = vals.reduce(function(a,b){return a+Math.pow(b-mean,2);},0)/vals.length;
+    var std = Math.sqrt(variance);
+    var max = Math.max.apply(null, vals), min = Math.min.apply(null, vals);
+    var col = colFor(k);
+    var d = col.decimals!=null ? col.decimals : 2;
+    return '<div class="statcard"><div class="shead"><span class="sw" style="background:var(--'+SERIES_COLORS[i]+')"></span>'+
+      '<span class="sname">'+col.label+(col.unit?' ('+col.unit+')':'')+'</span></div>'+
+      '<div class="srow"><span>Max</span><b class="num">'+max.toFixed(d)+'</b></div>'+
+      '<div class="srow"><span>Min</span><b class="num">'+min.toFixed(d)+'</b></div>'+
+      '<div class="srow"><span>Average</span><b class="num">'+mean.toFixed(d)+'</b></div>'+
+      '<div class="srow"><span>Median</span><b class="num">'+median.toFixed(d)+'</b></div>'+
+      '<div class="srow"><span>Std. deviation</span><b class="num">'+std.toFixed(d)+'</b></div></div>';
+  }).join('');
+}
+
+/* ---- chart ---- */
+var tipEl;
+function drawChart(){
+  var canvas = document.getElementById('chartCanvas');
+  var box = canvas.parentElement;
+  var cssW = box.clientWidth, cssH = 340;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = cssW*dpr; canvas.height = cssH*dpr;
+  canvas.style.width = cssW+'px'; canvas.style.height = cssH+'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+
+  var css = getComputedStyle(document.querySelector('.viz-root'));
+  var colors = {};
+  ['s1','s2','s3','s4','grid','baseline','ink-1','ink-2','ink-muted','panel','cmp','critical'].forEach(function(v){
+    colors[v] = css.getPropertyValue('--'+v).trim();
+  });
+
+  var visKeys = state.yKeys.filter(function(k){return state.visibleSeries.indexOf(k)>=0;});
+  if (!visKeys.length){ return; }
+  var rows = state.filtered.length ? state.filtered : state.rows;
+
+  if (state.chartType==='histogram'){
+    drawHistogramChart(ctx, cssW, cssH, colors, rows, visKeys[0]);
+    canvas._chartCtx = null;
+    return;
+  }
+
+  var padL=58, padR=16, padT=16, padB=36;
+  var plotW = cssW-padL-padR, plotH = cssH-padT-padB;
+
+  var xs = rows.map(function(r){return r[state.xKey];});
+  var xMin = Math.min.apply(null,xs), xMax = Math.max.apply(null,xs);
+  if (xMin===xMax){ xMax = xMin+1; }
+
+  var series = visKeys.map(function(k, idx){
+    var origIdx = state.yKeys.indexOf(k);
+    var vals = rows.map(function(r){return {x:r[state.xKey], y:r[k]};});
+    return {key:k, label:labelFor(k), color:colors[SERIES_COLORS[origIdx]], data:vals};
+  });
+
+  var yMin=Infinity, yMax=-Infinity;
+  if (state.normalize && series.length>1){
+    series.forEach(function(s){
+      var peak = Math.max.apply(null, s.data.map(function(d){return Math.abs(d.y);})) || 1;
+      s.norm = peak;
+      s.data.forEach(function(d){ var ny = d.y/peak*100; if(ny<yMin)yMin=ny; if(ny>yMax)yMax=ny; });
+    });
+  } else {
+    series.forEach(function(s){
+      s.data.forEach(function(d){ if(d.y<yMin)yMin=d.y; if(d.y>yMax)yMax=d.y; });
+    });
+  }
+  var yPad = (yMax-yMin)*0.1 || 1;
+  yMin -= yPad; yMax += yPad;
+
+  function px(x){ return padL + (x-xMin)/(xMax-xMin)*plotW; }
+  function py(y){ return padT + plotH - (y-yMin)/(yMax-yMin)*plotH; }
+  function valOf(s,d){ return state.normalize && series.length>1 ? d.y/s.norm*100 : d.y; }
+
+  ctx.strokeStyle = colors['grid']; ctx.lineWidth = 1; ctx.font = '11px ui-monospace,monospace';
+  ctx.fillStyle = colors['ink-muted'];
+  var yTicks = 5;
+  for (var i=0;i<=yTicks;i++){
+    var yv = yMin + (yMax-yMin)*i/yTicks;
+    var yp = py(yv);
+    ctx.beginPath(); ctx.moveTo(padL,yp); ctx.lineTo(cssW-padR,yp); ctx.stroke();
+    var label = state.normalize && series.length>1 ? yv.toFixed(0)+'%' : formatTick(yv);
+    ctx.textAlign='right'; ctx.textBaseline='middle';
+    ctx.fillText(label, padL-8, yp);
+  }
+  var xTicks = Math.min(6, rows.length);
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  for (i=0;i<=xTicks;i++){
+    var xv = xMin + (xMax-xMin)*i/xTicks;
+    ctx.fillText(formatTick(xv), px(xv), cssH-padB+8);
+  }
+  ctx.strokeStyle = colors['baseline']; ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.moveTo(padL, padT+plotH); ctx.lineTo(cssW-padR, padT+plotH); ctx.stroke();
+
+  if (state.chartType==='bar'){
+    var s0 = series[0];
+    var buckets = 20;
+    var bw = plotW/buckets;
+    var agg = new Array(buckets).fill(null).map(function(){return {sum:0,n:0};});
+    s0.data.forEach(function(d){
+      var bi = Math.min(buckets-1, Math.floor((d.x-xMin)/(xMax-xMin)*buckets));
+      var v = valOf(s0,d);
+      agg[bi].sum+=v; agg[bi].n++;
+    });
+    ctx.fillStyle = s0.color;
+    agg.forEach(function(a,bi){
+      if(!a.n) return;
+      var avg = a.sum/a.n;
+      var x0 = padL+bi*bw+2, w = bw-4;
+      var y0 = py(avg), y1 = py(0>yMin?0:yMin);
+      ctx.fillRect(x0, Math.min(y0,y1), w, Math.abs(y1-y0));
+    });
+  } else {
+    series.forEach(function(s){
+      if (state.chartType==='scatter'){
+        ctx.fillStyle = s.color;
+        s.data.forEach(function(d){
+          ctx.beginPath(); ctx.arc(px(d.x), py(valOf(s,d)), 3, 0, Math.PI*2); ctx.fill();
+        });
+      } else {
+        ctx.strokeStyle = s.color; ctx.lineWidth = 2; ctx.beginPath();
+        s.data.forEach(function(d,i){
+          var xp = px(d.x), yp = py(valOf(s,d));
+          if (i===0) ctx.moveTo(xp,yp); else ctx.lineTo(xp,yp);
+        });
+        ctx.stroke();
+      }
+      if (state.trend){
+        var trendPts = movingAverageXY(s.data);
+        ctx.save();
+        ctx.setLineDash([5,4]); ctx.strokeStyle = s.color; ctx.globalAlpha = 0.9; ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        trendPts.forEach(function(d,i){
+          var xp = px(d.x), yp = py(valOf(s,d));
+          if (i===0) ctx.moveTo(xp,yp); else ctx.lineTo(xp,yp);
+        });
+        ctx.stroke();
+        ctx.restore();
+      }
+    });
+
+    var primary = series[0];
+    if (primary && primary.data.length){
+      var peakPt = primary.data.reduce(function(best,d){ return d.y>best.y?d:best; });
+      var ppx = px(peakPt.x), ppy = py(valOf(primary,peakPt));
+      ctx.save();
+      ctx.strokeStyle = colors['ink-muted']; ctx.setLineDash([3,3]); ctx.lineWidth = 1; ctx.globalAlpha = 0.7;
+      ctx.beginPath(); ctx.moveTo(ppx, padT); ctx.lineTo(ppx, padT+plotH); ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = primary.color;
+      ctx.beginPath(); ctx.arc(ppx, ppy, 4.5, 0, Math.PI*2); ctx.fill();
+      ctx.lineWidth = 1.5; ctx.strokeStyle = colors['panel']; ctx.stroke();
+      var unit = colFor(primary.key).unit;
+      var label = 'peak '+formatTick(peakPt.y)+(state.normalize && series.length>1 ? '%' : (unit?' '+unit:''));
+      ctx.font = 'bold 11px ui-monospace,monospace';
+      var onRight = ppx > cssW-padR-90;
+      ctx.textAlign = onRight ? 'right' : 'left';
+      ctx.textBaseline = ppy-padT<20 ? 'top' : 'bottom';
+      ctx.fillStyle = colors['ink-1'];
+      ctx.fillText(label, ppx + (onRight?-9:9), ppy + (ctx.textBaseline==='top'?9:-9));
+
+      /* outlier highlighting on the primary series */
+      if (state.showOutliers){
+        var ys = primary.data.map(function(d){return d.y;});
+        var meanY = ys.reduce(function(a,b){return a+b;},0)/ys.length;
+        var stdY = Math.sqrt(ys.reduce(function(a,b){return a+Math.pow(b-meanY,2);},0)/ys.length);
+        ctx.save();
+        ctx.strokeStyle = colors['critical']; ctx.lineWidth = 1.8;
+        primary.data.forEach(function(d){
+          if (Math.abs(d.y-meanY) > 2.5*stdY){
+            ctx.beginPath(); ctx.arc(px(d.x), py(valOf(primary,d)), 6, 0, Math.PI*2); ctx.stroke();
+          }
+        });
+        ctx.restore();
+      }
+
+      /* curve fit overlay on the primary series */
+      if (state.fitType!=='none'){
+        var fit = computeFit(primary.data, state.fitType);
+        if (fit){
+          ctx.save();
+          ctx.setLineDash([2,3]); ctx.strokeStyle = colors['ink-1']; ctx.globalAlpha = 0.85; ctx.lineWidth = 1.6;
+          ctx.beginPath();
+          var steps = 60;
+          for (var fi=0; fi<=steps; fi++){
+            var fx = xMin + (xMax-xMin)*fi/steps;
+            var fyRaw = fit.fn(fx);
+            var fy = py(state.normalize && series.length>1 ? fyRaw/primary.norm*100 : fyRaw);
+            var fxp = px(fx);
+            if (fi===0) ctx.moveTo(fxp,fy); else ctx.lineTo(fxp,fy);
+          }
+          ctx.stroke();
+          ctx.restore();
+        }
+      }
+
+      /* spec limit lines, referenced to the primary series */
+      var lowerRaw = document.getElementById('specLower').value;
+      var upperRaw = document.getElementById('specUpper').value;
+      [lowerRaw, upperRaw].forEach(function(raw){
+        if (raw===''){ return; }
+        var v = parseFloat(raw);
+        var yv = state.normalize && series.length>1 ? v/primary.norm*100 : v;
+        var yp = py(yv);
+        ctx.save();
+        ctx.setLineDash([6,4]); ctx.strokeStyle = colors['critical']; ctx.globalAlpha = 0.8; ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.moveTo(padL, yp); ctx.lineTo(cssW-padR, yp); ctx.stroke();
+        ctx.restore();
+      });
+    }
+
+    /* comparison series overlay */
+    if (state.compareKey){
+      var cmpRows = getCompareRows();
+      if (cmpRows && primary){
+        var cmpData = cmpRows.map(function(r){return {x:r[state.xKey], y:r[primary.key]};});
+        var cmpVal = function(d){ return state.normalize && series.length>1 ? d.y/primary.norm*100 : d.y; };
+        ctx.save();
+        ctx.strokeStyle = colors['cmp']; ctx.lineWidth = 2; ctx.setLineDash([1,3]); ctx.beginPath();
+        cmpData.forEach(function(d,i){
+          var xp = px(d.x), yp = py(cmpVal(d));
+          if (i===0) ctx.moveTo(xp,yp); else ctx.lineTo(xp,yp);
+        });
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+  }
+
+  canvas._chartCtx = {series:series, px:px, py:py, valOf:valOf, xMin:xMin, xMax:xMax, padL:padL, padR:padR, cssW:cssW, cssH:cssH, padT:padT, plotH:plotH};
+  wireTooltip(canvas);
+}
+
+function getCompareRows(){
+  if (!state.compareKey || !DATASETS[state.compareKey]) return null;
+  if (!state._compareCache || state._compareCache.key!==state.compareKey){
+    state._compareCache = {key: state.compareKey, rows: DATASETS[state.compareKey].gen()};
+  }
+  return state._compareCache.rows;
+}
+
+function drawHistogramChart(ctx, cssW, cssH, colors, rows, key){
+  if (!key) return;
+  var vals = rows.map(function(r){return r[key];}).filter(function(v){return typeof v==='number';});
+  if (!vals.length) return;
+  var col = colFor(key);
+  var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals);
+  if (min===max){ max = min+1; }
+  var bins = 16;
+  var counts = new Array(bins).fill(0);
+  vals.forEach(function(v){
+    var bi = Math.min(bins-1, Math.floor((v-min)/(max-min)*bins));
+    counts[bi]++;
+  });
+  var maxCount = Math.max.apply(null, counts) || 1;
+
+  var padL=48, padR=16, padT=16, padB=40;
+  var plotW = cssW-padL-padR, plotH = cssH-padT-padB;
+  var bw = plotW/bins;
+
+  ctx.strokeStyle = colors['grid']; ctx.lineWidth=1; ctx.font='11px ui-monospace,monospace';
+  ctx.fillStyle = colors['ink-muted'];
+  var yTicks=4;
+  for (var i=0;i<=yTicks;i++){
+    var yv = maxCount*i/yTicks, yp = padT+plotH-(yv/maxCount)*plotH;
+    ctx.beginPath(); ctx.moveTo(padL,yp); ctx.lineTo(cssW-padR,yp); ctx.stroke();
+    ctx.textAlign='right'; ctx.textBaseline='middle';
+    ctx.fillText(Math.round(yv), padL-8, yp);
+  }
+  ctx.strokeStyle = colors['baseline'];
+  ctx.beginPath(); ctx.moveTo(padL,padT+plotH); ctx.lineTo(cssW-padR,padT+plotH); ctx.stroke();
+
+  ctx.fillStyle = colors['s1'];
+  counts.forEach(function(c,bi){
+    var h = (c/maxCount)*plotH;
+    ctx.fillRect(padL+bi*bw+1, padT+plotH-h, Math.max(1,bw-2), h);
+  });
+
+  ctx.textAlign='center'; ctx.textBaseline='top'; ctx.font='10px ui-monospace,monospace';
+  var xTickCount = 5;
+  for (i=0;i<=xTickCount;i++){
+    var xv = min + (max-min)*i/xTickCount;
+    ctx.fillText(formatTick(xv), padL+plotW*i/xTickCount, padT+plotH+8);
+  }
+  ctx.fillText(col.label+(col.unit?' ('+col.unit+')':'')+' — distribution', padL+plotW/2, cssH-16);
+}
+
+function movingAverageXY(data, windowFrac){
+  var sorted = data.slice().sort(function(a,b){return a.x-b.x;});
+  var n = sorted.length;
+  var w = Math.max(3, Math.round(n*(windowFrac||0.07)));
+  if (w%2===0) w++;
+  var half = Math.floor(w/2);
+  return sorted.map(function(pt,i){
+    var lo = Math.max(0,i-half), hi = Math.min(n-1,i+half), sum=0, cnt=0;
+    for (var j=lo; j<=hi; j++){ sum += sorted[j].y; cnt++; }
+    return {x:pt.x, y:sum/cnt};
+  });
+}
+
+function computeDFTMagnitude(values){
+  var n = values.length;
+  var mean = values.reduce(function(a,b){return a+b;},0)/n;
+  var detrended = values.map(function(v){return v-mean;});
+  var half = Math.floor(n/2);
+  var mags = [];
+  for (var k=0; k<=half; k++){
+    var re=0, im=0;
+    for (var t=0; t<n; t++){
+      var ang = -2*Math.PI*k*t/n;
+      re += detrended[t]*Math.cos(ang);
+      im += detrended[t]*Math.sin(ang);
+    }
+    mags.push(Math.sqrt(re*re+im*im)/n);
+  }
+  return mags;
+}
+
+function drawSpectrum(){
+  var canvas = document.getElementById('fftCanvas');
+  var box = canvas.parentElement;
+  var cssW = box.clientWidth, cssH = 150;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = cssW*dpr; canvas.height = cssH*dpr;
+  canvas.style.width = cssW+'px'; canvas.style.height = cssH+'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+
+  var css = getComputedStyle(document.querySelector('.viz-root'));
+  var colors = {};
+  ['s1','grid','baseline','ink-muted'].forEach(function(v){ colors[v] = css.getPropertyValue('--'+v).trim(); });
+
+  var subtitle = document.getElementById('fftSubtitle');
+  var visKeys = state.yKeys.filter(function(k){return state.visibleSeries.indexOf(k)>=0;});
+  var rows = state.filtered.length ? state.filtered : state.rows;
+  if (!visKeys.length || rows.length<8){ subtitle.textContent=''; return; }
+
+  var primaryKey = visKeys[0];
+  var sorted = rows.slice().sort(function(a,b){return a[state.xKey]-b[state.xKey];});
+  var values = sorted.map(function(r){return r[primaryKey];});
+  var mags = computeDFTMagnitude(values).slice(1);
+  subtitle.textContent = labelFor(primaryKey) + ' · ' + values.length + ' samples';
+
+  var padL=48, padR=12, padT=10, padB=26;
+  var plotW = cssW-padL-padR, plotH = cssH-padT-padB;
+  var maxMag = Math.max.apply(null, mags) || 1;
+
+  ctx.strokeStyle = colors['grid']; ctx.lineWidth=1; ctx.font='10px ui-monospace,monospace';
+  ctx.fillStyle = colors['ink-muted'];
+  var yTicks=3;
+  for (var i=0;i<=yTicks;i++){
+    var yv = maxMag*i/yTicks, yp = padT+plotH-(yv/maxMag)*plotH;
+    ctx.beginPath(); ctx.moveTo(padL,yp); ctx.lineTo(cssW-padR,yp); ctx.stroke();
+    ctx.textAlign='right'; ctx.textBaseline='middle';
+    ctx.fillText(formatTick(yv), padL-6, yp);
+  }
+  ctx.strokeStyle = colors['baseline'];
+  ctx.beginPath(); ctx.moveTo(padL,padT+plotH); ctx.lineTo(cssW-padR,padT+plotH); ctx.stroke();
+
+  var bw = plotW/mags.length;
+  ctx.fillStyle = colors['s1'];
+  mags.forEach(function(m,i){
+    var h = (m/maxMag)*plotH;
+    ctx.fillRect(padL+i*bw+1, padT+plotH-h, Math.max(1,bw-2), h);
+  });
+  ctx.fillStyle = colors['ink-muted']; ctx.textAlign='center'; ctx.textBaseline='top'; ctx.font='10px ui-monospace,monospace';
+  ctx.fillText('frequency bin →', padL+plotW/2, cssH-padB+11);
+}
+
+function computeSpectrogramGrid(values, nSegTarget, freqBinsCap){
+  var nSeg = nSegTarget || 10;
+  var segLen = Math.max(8, Math.floor(values.length/6));
+  var hop = Math.max(1, Math.floor((values.length-segLen) / (nSeg-1)));
+  var segments = [];
+  for (var s=0; s*hop+segLen<=values.length && segments.length<nSeg; s++){
+    segments.push(values.slice(s*hop, s*hop+segLen));
+  }
+  var freqBins = Math.min(freqBinsCap || 20, Math.floor(segLen/2));
+  var grid = segments.map(function(seg){ return computeDFTMagnitude(seg).slice(1, freqBins+1); });
+  return {grid:grid, freqBins:freqBins};
+}
+
+function hexToRgb(hex){
+  hex = hex.replace('#','');
+  if (hex.length===3){ hex = hex.split('').map(function(c){return c+c;}).join(''); }
+  var num = parseInt(hex,16);
+  return [(num>>16)&255, (num>>8)&255, num&255];
+}
+function lerpColor(c1, c2, t){
+  return [0,1,2].map(function(i){ return Math.round(c1[i] + (c2[i]-c1[i])*t); });
+}
+
+function drawSpectrogram(){
+  var canvas = document.getElementById('spectroCanvas');
+  var box = canvas.parentElement;
+  var cssW = box.clientWidth, cssH = 150;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = cssW*dpr; canvas.height = cssH*dpr;
+  canvas.style.width = cssW+'px'; canvas.style.height = cssH+'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+
+  var css = getComputedStyle(document.querySelector('.viz-root'));
+  var surfaceRgb = hexToRgb(css.getPropertyValue('--surface-1').trim());
+  var s1Rgb = hexToRgb(css.getPropertyValue('--s1').trim());
+  var inkMuted = css.getPropertyValue('--ink-muted').trim();
+
+  var visKeys = state.yKeys.filter(function(k){return state.visibleSeries.indexOf(k)>=0;});
+  var rows = state.filtered.length ? state.filtered : state.rows;
+  if (!visKeys.length || rows.length<16) return;
+
+  var primaryKey = visKeys[0];
+  var sorted = rows.slice().sort(function(a,b){return a[state.xKey]-b[state.xKey];});
+  var values = sorted.map(function(r){return r[primaryKey];});
+
+  var spec = computeSpectrogramGrid(values, 10, 20);
+  var grid = spec.grid, freqBins = spec.freqBins;
+  if (!grid.length) return;
+  var maxMag = 0;
+  grid.forEach(function(col){ col.forEach(function(v){ if (v>maxMag) maxMag=v; }); });
+  maxMag = maxMag || 1;
+
+  var padL=48, padR=12, padT=10, padB=22;
+  var plotW = cssW-padL-padR, plotH = cssH-padT-padB;
+  var cw = plotW/grid.length, ch = plotH/freqBins;
+
+  grid.forEach(function(col, ci){
+    col.forEach(function(mag, fi){
+      var t = Math.min(1, mag/maxMag);
+      var rgb = lerpColor(surfaceRgb, s1Rgb, t);
+      ctx.fillStyle = 'rgb('+rgb[0]+','+rgb[1]+','+rgb[2]+')';
+      ctx.fillRect(padL+ci*cw, padT+plotH-(fi+1)*ch, Math.ceil(cw), Math.ceil(ch));
+    });
+  });
+
+  ctx.fillStyle = inkMuted; ctx.font='10px ui-monospace,monospace';
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  ctx.fillText('time →', padL+plotW/2, cssH-padB+8);
+  ctx.save(); ctx.translate(12, padT+plotH/2); ctx.rotate(-Math.PI/2);
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('frequency →', 0, 0);
+  ctx.restore();
+}
+
+function drawWaterfall(){
+  var canvas = document.getElementById('waterfallCanvas');
+  var box = canvas.parentElement;
+  var cssW = box.clientWidth, cssH = 220;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = cssW*dpr; canvas.height = cssH*dpr;
+  canvas.style.width = cssW+'px'; canvas.style.height = cssH+'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+
+  var css = getComputedStyle(document.querySelector('.viz-root'));
+  var panelRgb = hexToRgb(css.getPropertyValue('--surface-1').trim());
+  var s1Rgb = hexToRgb(css.getPropertyValue('--s1').trim());
+  var backRgb = hexToRgb(css.getPropertyValue('--ink-muted').trim());
+  var inkMuted = css.getPropertyValue('--ink-muted').trim();
+
+  var visKeys = state.yKeys.filter(function(k){return state.visibleSeries.indexOf(k)>=0;});
+  var rows = state.filtered.length ? state.filtered : state.rows;
+  if (!visKeys.length || rows.length<16) return;
+
+  var primaryKey = visKeys[0];
+  var sorted = rows.slice().sort(function(a,b){return a[state.xKey]-b[state.xKey];});
+  var values = sorted.map(function(r){return r[primaryKey];});
+
+  var spec = computeSpectrogramGrid(values, 8, 18);
+  var grid = spec.grid, freqBins = spec.freqBins;
+  if (!grid.length) return;
+  var maxMag = 0;
+  grid.forEach(function(col){ col.forEach(function(v){ if (v>maxMag) maxMag=v; }); });
+  maxMag = maxMag || 1;
+
+  var nSeg = grid.length;
+  var depthStepX = 18, depthStepY = 12;
+  var padL=20, padR=20+((nSeg-1)*depthStepX), padT=14, padB=30+((nSeg-1)*depthStepY);
+  var plotW = cssW-padL-padR, plotH = cssH-padT-padB;
+
+  ctx.font='10px ui-monospace,monospace'; ctx.fillStyle=inkMuted; ctx.textAlign='left'; ctx.textBaseline='top';
+  ctx.fillText(labelFor(primaryKey)+' — magnitude spectrum evolving over the test (oldest at back)', padL, 2);
+
+  for (var d=0; d<nSeg; d++){
+    var col = grid[d];
+    var offX = d*depthStepX, offY = d*depthStepY;
+    var t = nSeg>1 ? d/(nSeg-1) : 1;
+    var rgb = lerpColor(backRgb, s1Rgb, 0.35+0.65*t);
+    var lineColor = 'rgb('+rgb[0]+','+rgb[1]+','+rgb[2]+')';
+    var floorY = padT + plotH + offY;
+
+    ctx.beginPath();
+    ctx.moveTo(padL+offX, floorY);
+    for (var f=0; f<freqBins; f++){
+      var xp = padL + offX + (f/(freqBins-1))*plotW;
+      var yp = padT + plotH - (col[f]/maxMag)*plotH*0.85 + offY;
+      ctx.lineTo(xp, yp);
+    }
+    ctx.lineTo(padL+offX+plotW, floorY);
+    ctx.closePath();
+    ctx.fillStyle = panelRgb[0]!==undefined ? 'rgb('+panelRgb[0]+','+panelRgb[1]+','+panelRgb[2]+')' : '#000';
+    ctx.fill();
+
+    ctx.strokeStyle = lineColor; ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    for (var f2=0; f2<freqBins; f2++){
+      var xp2 = padL + offX + (f2/(freqBins-1))*plotW;
+      var yp2 = padT + plotH - (col[f2]/maxMag)*plotH*0.85 + offY;
+      if (f2===0) ctx.moveTo(xp2,yp2); else ctx.lineTo(xp2,yp2);
+    }
+    ctx.stroke();
+  }
+}
+
+function formatTick(v){
+  if (Math.abs(v)>=1000) return (v/1000).toFixed(1)+'k';
+  if (Math.abs(v)<1 && v!==0) return v.toFixed(2);
+  return v.toFixed(v%1===0?0:1);
+}
+
+function wireTooltip(canvas){
+  if (canvas._tipWired) return;
+  canvas._tipWired = true;
+  tipEl = document.getElementById('tooltip');
+  canvas.addEventListener('mousemove', function(e){
+    var c = canvas._chartCtx; if(!c || !c.series.length) return;
+    var rect = canvas.getBoundingClientRect();
+    var mx = e.clientX-rect.left;
+    var xVal = c.xMin + (mx-c.padL)/(c.cssW-c.padL-c.padR)*(c.xMax-c.xMin);
+    var nearest = c.series[0].data.reduce(function(best,d){
+      return Math.abs(d.x-xVal) < Math.abs(best.x-xVal) ? d : best;
+    });
+    var html = '<div class="tx">'+labelFor(state.xKey)+' = '+formatTick(nearest.x)+'</div>';
+    c.series.forEach(function(s){
+      var pt = s.data.reduce(function(best,d){ return Math.abs(d.x-nearest.x)<Math.abs(best.x-nearest.x)?d:best; });
+      var v = c.valOf(s,pt);
+      html += '<div class="trow"><span class="sw" style="background:'+s.color+'"></span>'+s.label+': <b class="num">'+
+        v.toFixed(state.normalize && c.series.length>1 ? 1 : 2)+(state.normalize && c.series.length>1?'%':'')+'</b></div>';
+    });
+    tipEl.innerHTML = html;
+    tipEl.style.left = Math.min(mx+14, canvas.clientWidth-160)+'px';
+    tipEl.style.top = (e.clientY-rect.top-10)+'px';
+    tipEl.classList.add('show');
+  });
+  canvas.addEventListener('mouseleave', function(){ tipEl.classList.remove('show'); });
+}
+
+/* ---- questions ---- */
+function renderQuestions(){
+  var qs = questionsFor(state.key);
+  document.getElementById('qChips').innerHTML = qs.map(function(q){
+    return '<button type="button" class="qchip" onclick="askQuestion(\''+q.id+'\')">'+q.label+'</button>';
+  }).join('');
+}
+function askQuestion(id){
+  var q = questionsFor(state.key).filter(function(x){return x.id===id;})[0];
+  var answer = q.fn(state.filtered.length?state.filtered:state.rows);
+  var wrap = document.getElementById('answers');
+  var qb = document.createElement('div'); qb.className='abubble q'; qb.textContent = q.label;
+  var ab = document.createElement('div'); ab.className='abubble a'; ab.innerHTML = answer;
+  wrap.appendChild(qb); wrap.appendChild(ab);
+  ab.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+/* ---- export ---- */
+function downloadCsv(){
+  var cfg = state.cfg;
+  var cols = cfg.columns.slice();
+  if (state.key==='fatigue'||state.key==='fatigue2') cols.push({key:'Status',label:'Status'});
+  var rows = state.filtered.length ? state.filtered : state.rows;
+  var lines = [cols.map(function(c){return c.label;}).join(',')];
+  rows.forEach(function(r){
+    lines.push(cols.map(function(c){return r[c.key];}).join(','));
+  });
+  var blob = new Blob([lines.join('\n')], {type:'text/csv'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = cfg.filename.replace('.xlsx','_filtered.csv');
+  a.click();
+}
+
+function hashCode(str){
+  var h = 0;
+  for (var i=0; i<str.length; i++){ h = (h*31 + str.charCodeAt(i)) | 0; }
+  return h;
+}
+
+function openReport(){
+  var cfg = state.cfg;
+  var rows = state.filtered.length ? state.filtered : state.rows;
+  var reportNo = 'RPT-2026-' + (Math.abs(hashCode(cfg.filename)) % 9000 + 1000);
+  var now = new Date();
+
+  var metaPairs = Object.keys(cfg.meta).map(function(k){ return [k.replace(/_/g,' '), cfg.meta[k]]; });
+  metaPairs.push(['Source file', cfg.filename]);
+  metaPairs.push(['Rows in range', rows.length.toLocaleString() + ' of ' + state.rows.length.toLocaleString()]);
+  metaPairs.push(['Report generated', now.toLocaleString()]);
+  var metaHtml = metaPairs.map(function(p){
+    return '<div class="mrow"><span>'+p[0]+'</span><span>'+p[1]+'</span></div>';
+  }).join('');
+
+  var chartImg = '';
+  try {
+    var dataUrl = document.getElementById('chartCanvas').toDataURL('image/png');
+    chartImg = '<img class="rchartimg" src="'+dataUrl+'" alt="Chart of '+cfg.filename+'">';
+  } catch(e){}
+
+  var statsRows = state.yKeys.map(function(k){
+    var vals = rows.map(function(r){return r[k];});
+    var mean = vals.reduce(function(a,b){return a+b;},0)/vals.length;
+    var std = Math.sqrt(vals.reduce(function(a,b){return a+Math.pow(b-mean,2);},0)/vals.length);
+    var col = colFor(k), d = col.decimals!=null?col.decimals:2;
+    return '<tr><td>'+col.label+(col.unit?' ('+col.unit+')':'')+'</td>'+
+      '<td class="num">'+Math.max.apply(null,vals).toFixed(d)+'</td>'+
+      '<td class="num">'+Math.min.apply(null,vals).toFixed(d)+'</td>'+
+      '<td class="num">'+mean.toFixed(d)+'</td>'+
+      '<td class="num">'+std.toFixed(d)+'</td></tr>';
+  }).join('');
+
+  var summaryQ = questionsFor(state.key).filter(function(q){return q.label==='Summarize this test';})[0];
+  var autoSummary = summaryQ ? summaryQ.fn(rows)
+    : (GENERIC_QUESTIONS[0].fn(rows) + ' ' + GENERIC_QUESTIONS[2].fn(rows));
+
+  var specHtml = '';
+  var specResultText = document.getElementById('specResult').innerHTML;
+  if (specResultText) specHtml = '<div class="rsectitle">Spec compliance</div><p class="rsummary">'+specResultText+'</p>';
+
+  var fitHtml = '';
+  if (state.fitType!=='none'){
+    var fitText = document.getElementById('fitInfo').innerHTML;
+    if (fitText) fitHtml = '<div class="rsectitle">Curve fit</div><p class="rsummary">'+fitText+'</p>';
+  }
+
+  var cmpHtml = '';
+  if (state.compareKey && DATASETS[state.compareKey]){
+    var cmpCfg = DATASETS[state.compareKey];
+    var cmpRows2 = getCompareRows();
+    var primKey = state.yKeys[0];
+    var cmpVals = cmpRows2.map(function(r){return r[primKey];});
+    var curVals = rows.map(function(r){return r[primKey];});
+    var cmpMean = cmpVals.reduce(function(a,b){return a+b;},0)/cmpVals.length;
+    var curMean = curVals.reduce(function(a,b){return a+b;},0)/curVals.length;
+    var col2 = colFor(primKey), d2 = col2.decimals!=null?col2.decimals:2;
+    cmpHtml = '<div class="rsectitle">Comparison</div><p class="rsummary">Compared against <b>'+cmpCfg.filename+
+      '</b> (Batch '+cmpCfg.meta.Batch+'). Average '+col2.label+': this test <b>'+curMean.toFixed(d2)+
+      (col2.unit?' '+col2.unit:'')+'</b> vs comparison <b>'+cmpMean.toFixed(d2)+(col2.unit?' '+col2.unit:'')+'</b> ('+
+      (curMean>=cmpMean?'+':'')+((curMean-cmpMean)/Math.abs(cmpMean)*100).toFixed(1)+'% difference).</p>';
+  }
+
+  document.getElementById('reportBody').innerHTML =
+    '<div class="rdoc">'+
+      '<div class="rdochead">'+
+        '<div><div class="rtitle">Engineering Analysis Report</div><div class="rsub">Sheet: '+cfg.sheet+'</div></div>'+
+        '<div class="rid">'+reportNo+'<br>'+now.toLocaleDateString()+'</div>'+
+      '</div>'+
+      '<div class="rmetagrid">'+metaHtml+'</div>'+
+      '<div class="rsectitle">Chart</div>'+chartImg+
+      '<div class="rsectitle">Summary statistics</div>'+
+      '<table class="rtable"><thead><tr><th>Variable</th><th class="num">Max</th><th class="num">Min</th>'+
+        '<th class="num">Average</th><th class="num">Std Dev</th></tr></thead><tbody>'+statsRows+'</tbody></table>'+
+      specHtml + fitHtml + cmpHtml +
+      '<div class="rsectitle">Analysis summary</div>'+
+      '<p class="rsummary">'+autoSummary+'</p>'+
+      '<div class="rsectitle">Additional notes</div>'+
+      '<p class="soft" style="min-height:34px">— add engineer notes here —</p>'+
+      '<div class="signrow">'+
+        '<div class="signbox">Prepared by</div>'+
+        '<div class="signbox">Reviewed by</div>'+
+        '<div class="signbox">Approved by</div>'+
+      '</div>'+
+      '<div class="rfoot"><span>Generated automatically by MB Engineering Data Analyzer</span><span>'+reportNo+'</span></div>'+
+    '</div>';
+  document.getElementById('reportModal').classList.add('on');
+}
+function closeReport(){ document.getElementById('reportModal').classList.remove('on'); }
+
+/* ---- batch QA dashboard ---- */
+var batchFiles = [];
+var BATCH_COLORS = ['s1','s2','s3','s4','cmp','critical'];
+
+function openBatchScreen(){
+  document.getElementById('introScreen').style.display = 'none';
+  document.getElementById('workspace').classList.remove('on');
+  document.getElementById('batchScreen').classList.add('on');
+}
+function closeBatchScreen(){
+  document.getElementById('batchScreen').classList.remove('on');
+  document.getElementById('introScreen').style.display = '';
+}
+
+function batchEntryFromKey(key){
+  var cfg = DATASETS[key];
+  var rows = cfg.gen();
+  var primaryKey = cfg.defaultY[0];
+  var col = cfg.columns.filter(function(c){return c.key===primaryKey;})[0];
+  return {
+    filename: cfg.filename, batch: (cfg.meta && cfg.meta.Batch) || '—',
+    primaryKey: primaryKey, primaryLabel: col.label, primaryUnit: col.unit, decimals: col.decimals,
+    pts: rows.map(function(r){ return {x:r[cfg.defaultX], y:r[primaryKey]}; }),
+    columns: cfg.columns, xKey: cfg.defaultX, rows: rows
+  };
+}
+
+function batchEntryFromFile(file){
+  return new Promise(function(resolve){
+    var reader = new FileReader();
+    reader.onload = function(e){
+      var parsed = parseCSV(String(e.target.result));
+      var columns = inferColumns(parsed.headers, parsed.rows);
+      var numericCols = columns.filter(function(c){return c._numeric;});
+      if (!parsed.rows.length || !numericCols.length){ resolve(null); return; }
+      var xCol = columns[0];
+      var yCol = numericCols.filter(function(c){return c.key!==xCol.key;})[0] || numericCols[0];
+      resolve({
+        filename: file.name, batch: '—',
+        primaryKey: yCol.key, primaryLabel: yCol.label, primaryUnit: yCol.unit, decimals: yCol.decimals,
+        pts: parsed.rows.map(function(r){ return {x:r[xCol.key], y:r[yCol.key]}; })
+          .filter(function(p){ return typeof p.x==='number' && typeof p.y==='number'; }),
+        columns: columns, xKey: xCol.key, rows: parsed.rows
+      });
+    };
+    reader.readAsText(file);
+  });
+}
+
+function comparePair(keyA, keyB){
+  batchFiles = [batchEntryFromKey(keyA), batchEntryFromKey(keyB)];
+  openBatchScreen();
+  renderBatchAll();
+}
+
+function onCompareSlotChange(slot){
+  var sel = document.getElementById('compareSlot'+slot);
+  var fileInput = document.getElementById('compareFile'+slot);
+  fileInput.style.display = sel.value==='upload' ? '' : 'none';
+}
+
+function runCompareTwo(){
+  var selA = document.getElementById('compareSlotA').value;
+  var selB = document.getElementById('compareSlotB').value;
+  var fileA = document.getElementById('compareFileA').files[0];
+  var fileB = document.getElementById('compareFileB').files[0];
+  if (selA==='upload' && !fileA){ alert('Choose a CSV file for File A, or pick a mock sample instead.'); return; }
+  if (selB==='upload' && !fileB){ alert('Choose a CSV file for File B, or pick a mock sample instead.'); return; }
+  var pA = selA==='upload' ? batchEntryFromFile(fileA) : Promise.resolve(batchEntryFromKey(selA));
+  var pB = selB==='upload' ? batchEntryFromFile(fileB) : Promise.resolve(batchEntryFromKey(selB));
+  Promise.all([pA, pB]).then(function(results){
+    var valid = results.filter(Boolean);
+    if (valid.length<2){ alert('Could not read one of the files — make sure it has a header row and at least one numeric column.'); return; }
+    batchFiles = valid;
+    openBatchScreen();
+    renderBatchAll();
+  });
+}
+
+function loadSampleBatch(){
+  batchFiles = Object.keys(DATASETS).filter(function(k){return k!=='custom';}).map(batchEntryFromKey);
+  renderBatchAll();
+}
+
+function handleBatchFiles(fileList){
+  var files = Array.prototype.slice.call(fileList);
+  if (!files.length) return;
+  batchFiles = [];
+  var remaining = files.length;
+  files.forEach(function(file){
+    var reader = new FileReader();
+    reader.onload = function(e){
+      var parsed = parseCSV(String(e.target.result));
+      var columns = inferColumns(parsed.headers, parsed.rows);
+      var numericCols = columns.filter(function(c){return c._numeric;});
+      if (parsed.rows.length && numericCols.length){
+        var xCol = columns[0];
+        var yCol = numericCols.filter(function(c){return c.key!==xCol.key;})[0] || numericCols[0];
+        batchFiles.push({
+          filename: file.name, batch: '—',
+          primaryKey: yCol.key, primaryLabel: yCol.label, primaryUnit: yCol.unit, decimals: yCol.decimals,
+          pts: parsed.rows.map(function(r){ return {x:r[xCol.key], y:r[yCol.key]}; })
+            .filter(function(p){ return typeof p.x==='number' && typeof p.y==='number'; }),
+          columns: columns, xKey: xCol.key, rows: parsed.rows
+        });
+      }
+      remaining--;
+      if (remaining===0) renderBatchAll();
+    };
+    reader.readAsText(file);
+  });
+}
+
+function batchStatsFor(file){
+  var ys = file.pts.map(function(p){return p.y;});
+  var mean = ys.reduce(function(a,b){return a+b;},0)/ys.length;
+  var std = Math.sqrt(ys.reduce(function(a,b){return a+Math.pow(b-mean,2);},0)/ys.length);
+  return {max:Math.max.apply(null,ys), min:Math.min.apply(null,ys), avg:mean, std:std};
+}
+
+function batchGroupStats(){
+  var withStats = batchFiles.map(function(f){ return {file:f, stats: batchStatsFor(f)}; });
+  var avgs = withStats.map(function(w){return w.stats.avg;});
+  var groupMean = avgs.reduce(function(a,b){return a+b;},0)/avgs.length;
+  var groupStd = Math.sqrt(avgs.reduce(function(a,b){return a+Math.pow(b-groupMean,2);},0)/avgs.length) || 0;
+  return {withStats:withStats, groupMean:groupMean, groupStd:groupStd};
+}
+
+function renderBatchAll(){
+  var has = batchFiles.length>0;
+  var isTwo = batchFiles.length===2;
+  document.getElementById('batchActionsRow').style.display = has ? '' : 'none';
+  document.getElementById('compareTwoView').style.display = (has && isTwo) ? '' : 'none';
+  document.getElementById('batchSpecPanel').style.display = (has && !isTwo) ? '' : 'none';
+  document.getElementById('batchOverlayPanel').style.display = (has && !isTwo) ? '' : 'none';
+  document.getElementById('batchTablePanel').style.display = (has && !isTwo) ? '' : 'none';
+  if (!has) return;
+  if (isTwo){
+    renderCompareTwoView();
+  } else {
+    renderBatchTable();
+    drawBatchOverlay();
+    renderBatchLegend();
+  }
+}
+
+/* ---- two-file side-by-side comparison ---- */
+var cmpFileA = null, cmpFileB = null;
+var CMP_QUESTIONS = [
+  {id:'higherAvg', label:'Which file has the higher average?', fn: function(a,b){
+    var winner = a.stats.avg>=b.stats.avg ? a : b, loser = winner===a ? b : a;
+    var dw = winner.file.decimals!=null?winner.file.decimals:2, dl = loser.file.decimals!=null?loser.file.decimals:2;
+    return 'Higher average: <b>'+winner.file.filename+'</b> ('+winner.stats.avg.toFixed(dw)+(winner.file.primaryUnit?' '+winner.file.primaryUnit:'')+
+      ') vs '+loser.file.filename+' ('+loser.stats.avg.toFixed(dl)+(loser.file.primaryUnit?' '+loser.file.primaryUnit:'')+').';
+  }},
+  {id:'moreVariable', label:'Which file has more variation (higher std dev)?', fn: function(a,b){
+    var winner = a.stats.std>=b.stats.std ? a : b, loser = winner===a ? b : a;
+    return '<b>'+winner.file.filename+'</b> shows more variation (std dev '+winner.stats.std.toFixed(2)+
+      ') than '+loser.file.filename+' (std dev '+loser.stats.std.toFixed(2)+').';
+  }},
+  {id:'pctDiff', label:'How different are they, percentage-wise?', fn: function(a,b){
+    var diff = ((b.stats.avg-a.stats.avg)/Math.abs(a.stats.avg||1))*100;
+    return b.file.filename+' averages <b>'+(diff>=0?'+':'')+diff.toFixed(1)+'%</b> compared to '+a.file.filename+'.';
+  }},
+  {id:'flagReview', label:'Which one should I flag for review?', fn: function(a,b){
+    var flagged = a.stats.std>=b.stats.std ? a : b;
+    return '<b>'+flagged.file.filename+'</b> is the more inconsistent of the two (higher std dev) — worth a closer look if consistency matters.';
+  }}
+];
+
+var cmpPanelState = { A:{xKey:null,yKey:null}, B:{xKey:null,yKey:null} };
+
+function renderCompareTwoView(){
+  var a = {file:batchFiles[0], stats:batchStatsFor(batchFiles[0])};
+  var b = {file:batchFiles[1], stats:batchStatsFor(batchFiles[1])};
+  cmpFileA = a; cmpFileB = b;
+
+  document.getElementById('cmpNameA').textContent = a.file.filename;
+  document.getElementById('cmpNameB').textContent = b.file.filename;
+  document.getElementById('cmpMetaA').innerHTML = '<span class="metachip">Batch: '+a.file.batch+'</span><span class="metachip">'+a.file.rows.length+' rows</span><span class="metachip">'+(a.file.columns?a.file.columns.length:'')+' columns</span>';
+  document.getElementById('cmpMetaB').innerHTML = '<span class="metachip">Batch: '+b.file.batch+'</span><span class="metachip">'+b.file.rows.length+' rows</span><span class="metachip">'+(b.file.columns?b.file.columns.length:'')+' columns</span>';
+
+  cmpPanelState.A = {xKey: a.file.xKey, yKey: a.file.primaryKey};
+  cmpPanelState.B = {xKey: b.file.xKey, yKey: b.file.primaryKey};
+
+  renderCmpPanel('A', a.file);
+  renderCmpPanel('B', b.file);
+  renderCompareSummaryTable(a, b);
+  renderCompareQuestions();
+  document.getElementById('cmpAnswers').innerHTML = '';
+}
+
+function renderCmpPanel(panel, file){
+  var cols = file.columns || [];
+  var numericCols = cols.filter(function(c){ return c._numeric!==false; });
+
+  var xSel = document.getElementById('cmpXSelect'+panel);
+  var ySel = document.getElementById('cmpYSelect'+panel);
+  xSel.innerHTML = numericCols.map(function(c){
+    return '<option value="'+c.key+'"'+(c.key===cmpPanelState[panel].xKey?' selected':'')+'>'+c.label+(c.unit?' ('+c.unit+')':'')+'</option>';
+  }).join('');
+  ySel.innerHTML = numericCols.map(function(c){
+    return '<option value="'+c.key+'"'+(c.key===cmpPanelState[panel].yKey?' selected':'')+'>'+c.label+(c.unit?' ('+c.unit+')':'')+'</option>';
+  }).join('');
+
+  renderCmpPreviewTable(panel, file);
+  renderCmpChartAndStats(panel, file);
+  renderCmpAllStatsTable(panel, file);
+}
+
+function onCmpControlsChange(panel){
+  cmpPanelState[panel].xKey = document.getElementById('cmpXSelect'+panel).value;
+  cmpPanelState[panel].yKey = document.getElementById('cmpYSelect'+panel).value;
+  var file = panel==='A' ? cmpFileA.file : cmpFileB.file;
+  renderCmpChartAndStats(panel, file);
+}
+
+function renderCmpPreviewTable(panel, file){
+  var cols = (file.columns || []).slice();
+  var rows = file.rows.slice(0,8);
+  var thead = '<thead><tr>'+cols.map(function(c){return '<th>'+c.label+(c.unit?' ('+c.unit+')':'')+'</th>';}).join('')+'</tr></thead>';
+  var tbody = '<tbody>'+rows.map(function(r){
+    return '<tr>'+cols.map(function(c){
+      var v = r[c.key];
+      return '<td class="num">'+(typeof v==='number' && c.decimals!=null ? v.toFixed(c.decimals) : v)+'</td>';
+    }).join('')+'</tr>';
+  }).join('')+'</tbody>';
+  document.getElementById('cmpPreview'+panel).innerHTML = thead+tbody;
+}
+
+function cmpColFor(file, key){
+  return (file.columns||[]).filter(function(c){return c.key===key;})[0] || {label:key, unit:'', decimals:2};
+}
+
+function renderCmpChartAndStats(panel, file){
+  var xKey = cmpPanelState[panel].xKey, yKey = cmpPanelState[panel].yKey;
+  var pts = file.rows.map(function(r){ return {x:r[xKey], y:r[yKey]}; })
+    .filter(function(p){ return typeof p.x==='number' && typeof p.y==='number'; });
+  drawMiniChart('cmpChart'+panel, pts, panel==='A' ? 's1' : 's2');
+
+  var col = cmpColFor(file, yKey);
+  var d = col.decimals!=null ? col.decimals : 2;
+  var ys = pts.map(function(p){return p.y;});
+  if (!ys.length){ document.getElementById('cmpStats'+panel).innerHTML=''; return; }
+  var mean = ys.reduce(function(a,b){return a+b;},0)/ys.length;
+  var std = Math.sqrt(ys.reduce(function(a,b){return a+Math.pow(b-mean,2);},0)/ys.length);
+  document.getElementById('cmpStats'+panel).innerHTML =
+    '<div class="statcard"><div class="shead"><span class="sname">'+col.label+(col.unit?' ('+col.unit+')':'')+'</span></div>'+
+    '<div class="srow"><span>Max</span><b class="num">'+Math.max.apply(null,ys).toFixed(d)+'</b></div>'+
+    '<div class="srow"><span>Min</span><b class="num">'+Math.min.apply(null,ys).toFixed(d)+'</b></div>'+
+    '<div class="srow"><span>Average</span><b class="num">'+mean.toFixed(d)+'</b></div>'+
+    '<div class="srow"><span>Std. deviation</span><b class="num">'+std.toFixed(d)+'</b></div></div>';
+}
+
+function renderCmpAllStatsTable(panel, file){
+  var numericCols = (file.columns||[]).filter(function(c){ return c._numeric!==false; });
+  var thead = '<thead><tr><th>Variable</th><th class="num">Max</th><th class="num">Min</th><th class="num">Average</th><th class="num">Std Dev</th></tr></thead>';
+  var body = numericCols.map(function(c){
+    var vals = file.rows.map(function(r){return r[c.key];}).filter(function(v){return typeof v==='number';});
+    if (!vals.length) return '';
+    var mean = vals.reduce(function(a,b){return a+b;},0)/vals.length;
+    var std = Math.sqrt(vals.reduce(function(a,b){return a+Math.pow(b-mean,2);},0)/vals.length);
+    var d = c.decimals!=null ? c.decimals : 2;
+    return '<tr><td>'+c.label+(c.unit?' ('+c.unit+')':'')+'</td>'+
+      '<td class="num">'+Math.max.apply(null,vals).toFixed(d)+'</td>'+
+      '<td class="num">'+Math.min.apply(null,vals).toFixed(d)+'</td>'+
+      '<td class="num">'+mean.toFixed(d)+'</td>'+
+      '<td class="num">'+std.toFixed(d)+'</td></tr>';
+  }).join('');
+  document.getElementById('cmpAllStats'+panel).innerHTML = thead+'<tbody>'+body+'</tbody>';
+}
+
+function renderCompareSummaryTable(a, b){
+  var d = Math.max(a.file.decimals!=null?a.file.decimals:2, b.file.decimals!=null?b.file.decimals:2);
+  var rows = [['Max',a.stats.max,b.stats.max], ['Min',a.stats.min,b.stats.min],
+    ['Average',a.stats.avg,b.stats.avg], ['Std. deviation',a.stats.std,b.stats.std]];
+  var thead = '<thead><tr><th>Metric</th><th class="num">'+a.file.filename+'</th><th class="num">'+b.file.filename+'</th><th class="num">Difference</th></tr></thead>';
+  var body = rows.map(function(r){
+    var diff = r[2]-r[1];
+    return '<tr><td>'+r[0]+'</td><td class="num">'+r[1].toFixed(d)+'</td><td class="num">'+r[2].toFixed(d)+'</td>'+
+      '<td class="num">'+(diff>=0?'+':'')+diff.toFixed(d)+'</td></tr>';
+  }).join('');
+  document.getElementById('cmpTable').innerHTML = thead + '<tbody>' + body + '</tbody>';
+
+  var pct = ((b.stats.avg-a.stats.avg)/Math.abs(a.stats.avg||1))*100;
+  var moreVariable = b.stats.std>a.stats.std ? b.file.filename : a.file.filename;
+  document.getElementById('cmpSummaryText').innerHTML =
+    b.file.filename+' averages <b>'+(pct>=0?'+':'')+pct.toFixed(1)+'%</b> relative to '+a.file.filename+
+    ', with <b>'+moreVariable+'</b> showing more variability.';
+}
+
+function renderCompareQuestions(){
+  document.getElementById('cmpQChips').innerHTML = CMP_QUESTIONS.map(function(q){
+    return '<button type="button" class="qchip" onclick="askCompareQuestion(\''+q.id+'\')">'+q.label+'</button>';
+  }).join('');
+}
+function askCompareQuestion(id){
+  var q = CMP_QUESTIONS.filter(function(x){return x.id===id;})[0];
+  var answer = q.fn(cmpFileA, cmpFileB);
+  var wrap = document.getElementById('cmpAnswers');
+  var qb = document.createElement('div'); qb.className='abubble q'; qb.textContent = q.label;
+  var ab = document.createElement('div'); ab.className='abubble a'; ab.innerHTML = answer;
+  wrap.appendChild(qb); wrap.appendChild(ab);
+  ab.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
+function drawMiniChart(canvasId, pts, colorKey){
+  var canvas = document.getElementById(canvasId);
+  var box = canvas.parentElement;
+  var cssW = box.clientWidth, cssH = 220;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = cssW*dpr; canvas.height = cssH*dpr;
+  canvas.style.width = cssW+'px'; canvas.style.height = cssH+'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+  if (!pts.length) return;
+
+  var css = getComputedStyle(document.querySelector('.viz-root'));
+  var colors = {};
+  ['grid','baseline','ink-muted',colorKey].forEach(function(v){ colors[v] = css.getPropertyValue('--'+v).trim(); });
+
+  var padL=46, padR=14, padT=12, padB=26;
+  var plotW = cssW-padL-padR, plotH = cssH-padT-padB;
+  var xs = pts.map(function(p){return p.x;}), ys = pts.map(function(p){return p.y;});
+  var xMin = Math.min.apply(null,xs), xMax = Math.max.apply(null,xs);
+  var yMin = Math.min.apply(null,ys), yMax = Math.max.apply(null,ys);
+  if (xMin===xMax) xMax = xMin+1;
+  var yPad = (yMax-yMin)*0.1 || 1; yMin -= yPad; yMax += yPad;
+  function px(x){ return padL+(x-xMin)/(xMax-xMin)*plotW; }
+  function py(y){ return padT+plotH-(y-yMin)/(yMax-yMin)*plotH; }
+
+  ctx.strokeStyle = colors['grid']; ctx.lineWidth=1; ctx.font='10px ui-monospace,monospace'; ctx.fillStyle = colors['ink-muted'];
+  for (var i=0;i<=4;i++){
+    var yv = yMin+(yMax-yMin)*i/4, yp = py(yv);
+    ctx.beginPath(); ctx.moveTo(padL,yp); ctx.lineTo(cssW-padR,yp); ctx.stroke();
+    ctx.textAlign='right'; ctx.textBaseline='middle'; ctx.fillText(formatTick(yv), padL-6, yp);
+  }
+  ctx.strokeStyle = colors['baseline'];
+  ctx.beginPath(); ctx.moveTo(padL,padT+plotH); ctx.lineTo(cssW-padR,padT+plotH); ctx.stroke();
+
+  ctx.strokeStyle = colors[colorKey]; ctx.lineWidth=2; ctx.beginPath();
+  pts.forEach(function(p,i){
+    var xp = px(p.x), yp = py(p.y);
+    if (i===0) ctx.moveTo(xp,yp); else ctx.lineTo(xp,yp);
+  });
+  ctx.stroke();
+}
+
+function renderBatchTable(){
+  if (!batchFiles.length) return;
+  var lowerRaw = document.getElementById('batchSpecLower').value;
+  var upperRaw = document.getElementById('batchSpecUpper').value;
+  var lower = lowerRaw!=='' ? parseFloat(lowerRaw) : null;
+  var upper = upperRaw!=='' ? parseFloat(upperRaw) : null;
+  var showSpec = lower!==null || upper!==null;
+
+  var g = batchGroupStats();
+  var thead = '<thead><tr><th>File</th><th>Batch</th><th>Variable</th><th class="num">Max</th><th class="num">Min</th>'+
+    '<th class="num">Average</th><th class="num">Std Dev</th><th>Drift</th>'+(showSpec?'<th>Spec</th>':'')+'</tr></thead>';
+  var rows = g.withStats.map(function(w){
+    var d = w.file.decimals!=null ? w.file.decimals : 2;
+    var drift = g.groupStd>0 && Math.abs(w.stats.avg-g.groupMean) > 1.5*g.groupStd;
+    var specCell = '';
+    if (showSpec){
+      var violations = w.file.pts.filter(function(p){ return (lower!==null&&p.y<lower)||(upper!==null&&p.y>upper); });
+      var pass = violations.length===0;
+      specCell = '<td><span class="driftflag '+(pass?'ok':'drift')+'">'+(pass?'PASS':'FAIL')+'</span></td>';
+    }
+    return '<tr class="filerow"><td class="mono">'+w.file.filename+'</td><td>'+w.file.batch+'</td>'+
+      '<td>'+w.file.primaryLabel+(w.file.primaryUnit?' ('+w.file.primaryUnit+')':'')+'</td>'+
+      '<td class="num">'+w.stats.max.toFixed(d)+'</td><td class="num">'+w.stats.min.toFixed(d)+'</td>'+
+      '<td class="num">'+w.stats.avg.toFixed(d)+'</td><td class="num">'+w.stats.std.toFixed(d)+'</td>'+
+      '<td><span class="driftflag '+(drift?'drift':'ok')+'">'+(drift?'⚠ DRIFT':'OK')+'</span></td>'+specCell+'</tr>';
+  }).join('');
+  document.getElementById('batchTable').innerHTML = thead + '<tbody>' + rows + '</tbody>';
+}
+
+function drawBatchOverlay(){
+  var canvas = document.getElementById('batchOverlayCanvas');
+  var box = canvas.parentElement;
+  var cssW = box.clientWidth, cssH = 300;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = cssW*dpr; canvas.height = cssH*dpr;
+  canvas.style.width = cssW+'px'; canvas.style.height = cssH+'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+
+  var css = getComputedStyle(document.querySelector('.viz-root'));
+  var colors = {};
+  ['grid','baseline','ink-muted','s1','s2','s3','s4','cmp','critical'].forEach(function(v){
+    colors[v] = css.getPropertyValue('--'+v).trim();
+  });
+
+  var padL=46, padR=16, padT=14, padB=30;
+  var plotW = cssW-padL-padR, plotH = cssH-padT-padB;
+  function px(t){ return padL + t*plotW; }
+  function py(t){ return padT + plotH - t*plotH; }
+
+  ctx.strokeStyle = colors['grid']; ctx.lineWidth=1; ctx.font='10px ui-monospace,monospace'; ctx.fillStyle=colors['ink-muted'];
+  for (var i=0;i<=4;i++){
+    var yp = padT+plotH-plotH*i/4;
+    ctx.beginPath(); ctx.moveTo(padL,yp); ctx.lineTo(cssW-padR,yp); ctx.stroke();
+    ctx.textAlign='right'; ctx.textBaseline='middle'; ctx.fillText((i*25)+'%', padL-6, yp);
+  }
+  ctx.strokeStyle = colors['baseline'];
+  ctx.beginPath(); ctx.moveTo(padL,padT+plotH); ctx.lineTo(cssW-padR,padT+plotH); ctx.stroke();
+
+  batchFiles.forEach(function(f, idx){
+    if (!f.pts.length) return;
+    var xs = f.pts.map(function(p){return p.x;});
+    var ys = f.pts.map(function(p){return p.y;});
+    var xMin = Math.min.apply(null,xs), xMax = Math.max.apply(null,xs);
+    var peak = Math.max.apply(null, ys.map(Math.abs)) || 1;
+    if (xMin===xMax) xMax = xMin+1;
+    var color = colors[BATCH_COLORS[idx % BATCH_COLORS.length]];
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.beginPath();
+    f.pts.forEach(function(p,i){
+      var t = (p.x-xMin)/(xMax-xMin);
+      var v = p.y/peak;
+      var xp = px(t), ypv = py(v);
+      if (i===0) ctx.moveTo(xp,ypv); else ctx.lineTo(xp,ypv);
+    });
+    ctx.stroke();
+  });
+
+  ctx.fillStyle = colors['ink-muted']; ctx.textAlign='center'; ctx.textBaseline='top';
+  ctx.fillText('test progress →', padL+plotW/2, cssH-padB+9);
+}
+
+function renderBatchLegend(){
+  document.getElementById('batchLegend').innerHTML = batchFiles.map(function(f,idx){
+    return '<div class="legitem"><span class="sw" style="background:var(--'+BATCH_COLORS[idx%BATCH_COLORS.length]+')"></span>'+f.filename+'</div>';
+  }).join('');
+}
+
+function openBatchReport(){
+  if (!batchFiles.length) return;
+  var lowerRaw = document.getElementById('batchSpecLower').value;
+  var upperRaw = document.getElementById('batchSpecUpper').value;
+  var lower = lowerRaw!=='' ? parseFloat(lowerRaw) : null;
+  var upper = upperRaw!=='' ? parseFloat(upperRaw) : null;
+  var now = new Date();
+  var reportNo = 'BQR-2026-' + (Math.abs(hashCode(batchFiles.map(function(f){return f.filename;}).join('|'))) % 9000 + 1000);
+
+  var g = batchGroupStats();
+  var driftedFiles = g.withStats.filter(function(w){ return g.groupStd>0 && Math.abs(w.stats.avg-g.groupMean) > 1.5*g.groupStd; });
+
+  var chartImg = '';
+  try {
+    var dataUrl = document.getElementById('batchOverlayCanvas').toDataURL('image/png');
+    chartImg = '<img class="rchartimg" src="'+dataUrl+'" alt="Batch overlay">';
+  } catch(e){}
+
+  var showSpec = lower!==null || upper!==null;
+  var rowsHtml = g.withStats.map(function(w){
+    var d = w.file.decimals!=null ? w.file.decimals : 2;
+    var drift = g.groupStd>0 && Math.abs(w.stats.avg-g.groupMean) > 1.5*g.groupStd;
+    var specCell = '';
+    if (showSpec){
+      var violations = w.file.pts.filter(function(p){ return (lower!==null&&p.y<lower)||(upper!==null&&p.y>upper); });
+      specCell = '<td>'+(violations.length===0?'PASS':'FAIL')+'</td>';
+    }
+    return '<tr><td>'+w.file.filename+'</td><td class="num">'+w.stats.avg.toFixed(d)+'</td><td class="num">'+w.stats.std.toFixed(d)+'</td>'+
+      '<td>'+(drift?'⚠ Drifted':'OK')+'</td>'+specCell+'</tr>';
+  }).join('');
+
+  document.getElementById('reportBody').innerHTML =
+    '<div class="rdoc">'+
+      '<div class="rdochead"><div><div class="rtitle">Batch QA Report</div><div class="rsub">'+batchFiles.length+' files compared</div></div>'+
+        '<div class="rid">'+reportNo+'<br>'+now.toLocaleDateString()+'</div></div>'+
+      '<div class="rsectitle">Overlay</div>'+chartImg+
+      '<div class="rsectitle">Files</div>'+
+      '<table class="rtable"><thead><tr><th>File</th><th class="num">Average</th><th class="num">Std Dev</th><th>Status</th>'+
+        (showSpec?'<th>Spec</th>':'')+'</tr></thead><tbody>'+rowsHtml+'</tbody></table>'+
+      '<div class="rsectitle">Findings</div>'+
+      '<p class="rsummary">'+(driftedFiles.length
+        ? driftedFiles.length+' of '+batchFiles.length+' file(s) drifted more than 1.5σ from the group average: <b>'+
+          driftedFiles.map(function(w){return w.file.filename;}).join(', ')+'</b>.'
+        : 'All '+batchFiles.length+' files fall within 1.5σ of the group average — no drift detected.')+'</p>'+
+      '<div class="rfoot"><span>Generated automatically by MB Engineering Data Analyzer</span><span>'+reportNo+'</span></div>'+
+    '</div>';
+  document.getElementById('reportModal').classList.add('on');
+}
+
+window.addEventListener('resize', function(){
+  if (state.key){ drawChart(); drawSpectrum(); if(state.showSpectrogram) drawSpectrogram(); if(state.showWaterfall) drawWaterfall(); }
+  if (batchFiles.length===2){ renderCmpChartAndStats('A', cmpFileA.file); renderCmpChartAndStats('B', cmpFileB.file); }
+  else if (batchFiles.length){ drawBatchOverlay(); }
+});
+
+document.getElementById('csvFileInput').addEventListener('change', function(){
+  if (this.files[0]) handleFileUpload(this.files[0]);
+  this.value = '';
+});
+var dz = document.getElementById('uploadDropzone');
+dz.addEventListener('dragover', function(e){ e.preventDefault(); dz.classList.add('drag'); });
+dz.addEventListener('dragleave', function(){ dz.classList.remove('drag'); });
+dz.addEventListener('drop', function(e){
+  e.preventDefault(); dz.classList.remove('drag');
+  var f = e.dataTransfer.files[0];
+  if (f) handleFileUpload(f);
+});
+
+document.getElementById('batchFileInput').addEventListener('change', function(){
+  handleBatchFiles(this.files);
+  this.value = '';
+});
+</script>
