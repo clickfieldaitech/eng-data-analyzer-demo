@@ -7,7 +7,7 @@
     --grid:#e1e0d9; --baseline:#c3c2b7; --border:rgba(11,11,11,.10);
     --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
     --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --critical:#d03b3b;
-    --good-bg:#e4f4e4; --crit-bg:#fbe6e6; --cmp:#8a63d2;
+    --good-bg:#e4f4e4; --crit-bg:#fbe6e6; --warn-bg:#fdf1de; --cmp:#8a63d2;
     --accent:#2a78d6; --accent-ink:#184f95;
   }
   @media (prefers-color-scheme:dark){
@@ -16,7 +16,7 @@
       --ink-1:#ffffff; --ink-2:#c3c2b7; --ink-muted:#898781;
       --grid:#2c2c2a; --baseline:#383835; --border:rgba(255,255,255,.10);
       --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
-      --good-bg:#123018; --crit-bg:#301414; --cmp:#a689e8;
+      --good-bg:#123018; --crit-bg:#301414; --warn-bg:#332209; --cmp:#a689e8;
       --accent:#3987e5; --accent-ink:#8fbcf2;
     }
   }
@@ -25,7 +25,7 @@
     --ink-1:#ffffff; --ink-2:#c3c2b7; --ink-muted:#898781;
     --grid:#2c2c2a; --baseline:#383835; --border:rgba(255,255,255,.10);
     --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500;
-    --good-bg:#123018; --crit-bg:#301414; --cmp:#a689e8;
+    --good-bg:#123018; --crit-bg:#301414; --warn-bg:#332209; --cmp:#a689e8;
     --accent:#3987e5; --accent-ink:#8fbcf2;
   }
   :root[data-theme="light"] .viz-root{
@@ -33,7 +33,7 @@
     --ink-1:#0b0b0b; --ink-2:#52514e; --ink-muted:#898781;
     --grid:#e1e0d9; --baseline:#c3c2b7; --border:rgba(11,11,11,.10);
     --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100;
-    --good-bg:#e4f4e4; --crit-bg:#fbe6e6; --cmp:#8a63d2;
+    --good-bg:#e4f4e4; --crit-bg:#fbe6e6; --warn-bg:#fdf1de; --cmp:#8a63d2;
     --accent:#2a78d6; --accent-ink:#184f95;
   }
   *{box-sizing:border-box}
@@ -156,6 +156,7 @@
     font-size:.8rem;padding:6px 13px;border-radius:20px}
   .badge.pass{background:var(--good-bg);color:var(--good)}
   .badge.fail{background:var(--crit-bg);color:var(--critical)}
+  .badge.warn{background:var(--warn-bg);color:var(--warn)}
   .specresult{margin-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
   .specresult .detail{font-size:.82rem;color:var(--ink-2)}
 
@@ -507,6 +508,35 @@
         </div>
         <div class="specresult" id="specResult"></div>
         <p class="fitinfo" id="forecastInfo" style="margin-top:10px"></p>
+      </section>
+
+      <section class="panel">
+        <div class="panelhead"><h2>Process capability (Cp / Cpk)</h2></div>
+        <p class="muted" style="font-size:.78rem;max-width:56ch">Uses the same spec limits above. Cp measures
+          whether the process spread could fit inside spec if centered; Cpk accounts for how off-center it
+          actually is — the number that matters for real capability.</p>
+        <div class="statsgrid" id="capabilityGrid" style="margin-top:12px"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panelhead"><h2>Interpolate a value</h2></div>
+        <p class="muted" style="font-size:.78rem;max-width:56ch">Estimate the reading at any point between two
+          measured samples — useful when you need a value at an exact time/cycle that wasn't directly logged.</p>
+        <div class="filterrow" style="margin-top:10px">
+          <div class="field"><label id="interpXLabel">X value</label><input class="numinput" type="number" id="interpX" step="any"></div>
+          <button class="applybtn" onclick="renderInterpolation()">Estimate</button>
+        </div>
+        <div class="specresult" id="interpResult" style="margin-top:10px"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panelhead"><h2>Safety factor</h2></div>
+        <p class="muted" style="font-size:.78rem;max-width:56ch">Compares the worst observed reading on the
+          primary variable against a material/design allowable you enter — the margin before failure.</p>
+        <div class="filterrow" style="margin-top:10px">
+          <div class="field"><label id="allowableLabel">Allowable limit</label><input class="numinput" type="number" id="allowableLimit" step="any" oninput="renderSafetyFactor()"></div>
+        </div>
+        <div class="specresult" id="safetyResult" style="margin-top:10px"></div>
       </section>
 
       <section class="panel">
@@ -1359,6 +1389,10 @@ function initWorkspace(key){
   document.getElementById('fitSelect').value = 'none';
   document.getElementById('specLower').value = '';
   document.getElementById('specUpper').value = '';
+  document.getElementById('interpX').value = '';
+  document.getElementById('interpResult').innerHTML = '';
+  document.getElementById('allowableLimit').value = '';
+  document.getElementById('safetyResult').innerHTML = '';
   document.getElementById('spectroBox').style.display = 'none';
   document.getElementById('waterfallBox').style.display = 'none';
 
@@ -1519,6 +1553,8 @@ function onControlsChange(skipCtrlRead){
   renderXcorrNote();
   renderSpecCompliance();
   renderForecast();
+  renderProcessCapability();
+  renderSafetyFactor();
 }
 
 function primarySeries(){
@@ -1639,6 +1675,103 @@ function renderForecast(){
   }
 }
 
+function renderProcessCapability(){
+  var grid = document.getElementById('capabilityGrid');
+  if (!grid) return;
+  var lowerRaw = document.getElementById('specLower').value;
+  var upperRaw = document.getElementById('specUpper').value;
+  var lower = lowerRaw!=='' ? parseFloat(lowerRaw) : null;
+  var upper = upperRaw!=='' ? parseFloat(upperRaw) : null;
+  if (lower===null && upper===null){ grid.innerHTML = '<p class="muted" style="font-size:.82rem">Enter a spec limit above to compute Cp/Cpk.</p>'; return; }
+  var prim = primarySeries();
+  if (!prim || prim.pts.length<5){ grid.innerHTML = '<p class="muted" style="font-size:.82rem">Not enough data points.</p>'; return; }
+  var ys = prim.pts.map(function(p){return p.y;});
+  var mean = ys.reduce(function(a,b){return a+b;},0)/ys.length;
+  var std = Math.sqrt(ys.reduce(function(a,b){return a+Math.pow(b-mean,2);},0)/(ys.length-1));
+  var d = prim.col.decimals!=null ? prim.col.decimals : 2;
+  var cards = [];
+  if (std>0){
+    if (lower!==null && upper!==null){
+      var cp = (upper-lower)/(6*std);
+      var cpk = Math.min((upper-mean)/(3*std), (mean-lower)/(3*std));
+      cards.push(['Cp', cp.toFixed(2), cp>=1.33?'good':(cp>=1?'ok':'weak')]);
+      cards.push(['Cpk', cpk.toFixed(2), cpk>=1.33?'good':(cpk>=1?'ok':'weak')]);
+    } else if (upper!==null){
+      var cpkU = (upper-mean)/(3*std);
+      cards.push(['Cpk (upper only)', cpkU.toFixed(2), cpkU>=1.33?'good':(cpkU>=1?'ok':'weak')]);
+    } else {
+      var cpkL = (mean-lower)/(3*std);
+      cards.push(['Cpk (lower only)', cpkL.toFixed(2), cpkL>=1.33?'good':(cpkL>=1?'ok':'weak')]);
+    }
+  }
+  cards.push(['Process mean', mean.toFixed(d)+' '+(prim.col.unit||''), '']);
+  cards.push(['Process std dev (σ)', std.toFixed(d)+' '+(prim.col.unit||''), '']);
+  grid.innerHTML = cards.map(function(c){
+    var cls = c[2]==='good' ? 'status-ok' : (c[2]==='weak' ? 'status-crit' : (c[2]==='ok' ? 'status-warn' : ''));
+    return '<div class="statcard"><div class="shead">'+c[0]+'</div><div class="srow"><b class="num '+cls+'">'+c[1]+'</b></div></div>';
+  }).join('');
+  var interpretation = document.getElementById('capabilityNote');
+  var noteHtml = '';
+  if (cards.length && lower!==null || upper!==null){
+    var headline = cards[0][1];
+    var val = parseFloat(headline);
+    noteHtml = val>=1.33 ? 'Process is capable — comfortably within spec across normal variation.'
+      : (val>=1 ? 'Process is marginally capable — some risk of out-of-spec parts under normal variation.'
+      : 'Process is <b>not capable</b> at this variation — expect out-of-spec parts even though individual points may currently pass.');
+  }
+  if (!interpretation){
+    grid.insertAdjacentHTML('afterend', '<p class="muted" style="font-size:.8rem;margin-top:8px" id="capabilityNote">'+noteHtml+'</p>');
+  } else {
+    interpretation.innerHTML = noteHtml;
+  }
+}
+
+function renderInterpolation(){
+  var el = document.getElementById('interpResult');
+  var xRaw = document.getElementById('interpX').value;
+  if (xRaw===''){ el.innerHTML = 'Enter an X value first.'; return; }
+  var x = parseFloat(xRaw);
+  var rows = (state.filtered.length ? state.filtered : state.rows).slice().sort(function(a,b){return a[state.xKey]-b[state.xKey];});
+  if (rows.length<2){ el.innerHTML = 'Not enough data to interpolate.'; return; }
+  var xs = rows.map(function(r){return r[state.xKey];});
+  var xMin = xs[0], xMax = xs[xs.length-1];
+  if (x<xMin || x>xMax){
+    el.innerHTML = '<span class="badge fail">OUT OF RANGE</span><span class="detail">'+labelFor(state.xKey)+' ranges from '+formatTick(xMin)+' to '+formatTick(xMax)+' in the loaded data — pick a value inside that range.</span>';
+    return;
+  }
+  var keys = state.yKeys.length ? state.yKeys : [state.cfg.defaultY[0]];
+  var results = keys.map(function(k){
+    var i = 0;
+    while (i<rows.length-1 && rows[i+1][state.xKey]<x) i++;
+    var r0 = rows[i], r1 = rows[Math.min(i+1, rows.length-1)];
+    var y;
+    if (r1[state.xKey]===r0[state.xKey]) y = r0[k];
+    else { var t = (x-r0[state.xKey])/(r1[state.xKey]-r0[state.xKey]); y = r0[k] + t*(r1[k]-r0[k]); }
+    var col = colFor(k);
+    var d = col.decimals!=null ? col.decimals : 2;
+    return col.label+' ≈ <b>'+y.toFixed(d)+' '+(col.unit||'')+'</b>';
+  });
+  el.innerHTML = '<span class="badge pass">ESTIMATED</span><span class="detail">at '+labelFor(state.xKey)+' = '+formatTick(x)+': '+results.join(', ')+' (linear interpolation between the two nearest samples).</span>';
+}
+
+function renderSafetyFactor(){
+  var el = document.getElementById('safetyResult');
+  var raw = document.getElementById('allowableLimit').value;
+  if (raw===''){ el.innerHTML=''; return; }
+  var allowable = parseFloat(raw);
+  var prim = primarySeries();
+  if (!prim || !prim.pts.length){ el.innerHTML = 'No data loaded for the primary variable.'; return; }
+  var worst = prim.pts.reduce(function(a,b){return Math.abs(b.y)>Math.abs(a.y)?b:a;});
+  var d = prim.col.decimals!=null ? prim.col.decimals : 2;
+  if (allowable===0 || worst.y===0){ el.innerHTML = 'Enter a non-zero allowable limit.'; return; }
+  var sf = Math.abs(allowable/worst.y);
+  var cls = sf>=2 ? 'pass' : (sf>=1 ? 'warn' : 'fail');
+  var badgeText = sf>=2 ? '✓ COMFORTABLE MARGIN' : (sf>=1 ? '⚠ THIN MARGIN' : '✕ EXCEEDS ALLOWABLE');
+  el.innerHTML = '<span class="badge '+cls+'">'+badgeText+'</span>'+
+    '<span class="detail">Worst observed '+prim.col.label+' = '+worst.y.toFixed(d)+' '+(prim.col.unit||'')+' vs allowable '+allowable.toFixed(d)+' '+(prim.col.unit||'')+
+    ' — safety factor = <b>'+sf.toFixed(2)+'×</b>'+(sf<1?' (already beyond the allowable limit).':'.')+'</span>';
+}
+
 function uniqueUnits(){
   var u = {};
   state.yKeys.forEach(function(k){ var c = colFor(k); u[c.unit||''] = true; });
@@ -1667,6 +1800,7 @@ function toggleSeries(k){
   if (state.showSpectrogram) drawSpectrogram();
   if (state.showWaterfall) drawWaterfall();
   renderLegend(); renderStats(); renderFitInfo(); renderOutlierNote(); renderXcorrNote(); renderSpecCompliance(); renderForecast();
+  renderProcessCapability(); renderSafetyFactor();
 }
 
 function renderStats(){
