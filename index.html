@@ -828,6 +828,31 @@
       </div>
     </div>
   </div>
+
+  <div class="modalbg" id="columnMapModal">
+    <div class="modal">
+      <div class="modalhead"><h3>Confirm columns</h3><button class="closex" onclick="cancelColumnMap()">✕</button></div>
+      <div class="modalbody">
+        <p class="muted" style="font-size:.82rem;margin-bottom:18px">Detected <b id="cmRowCount"></b> rows and
+          <b id="cmColCount"></b> columns in <b id="cmFileName"></b>. Confirm which column is the X-axis
+          (time/cycle) and which columns should be analyzed as Y values — adjust if the auto-detection guessed
+          wrong.</p>
+        <div class="field" style="margin-bottom:18px">
+          <label>X-axis column</label>
+          <select id="cmXSelect" class="numinput" style="width:100%;margin-top:6px" onchange="onCmXChange()"></select>
+        </div>
+        <div class="field">
+          <label>Y columns to analyze</label>
+          <div id="cmYChecks" style="display:flex;flex-direction:column;gap:9px;margin-top:8px"></div>
+        </div>
+        <p class="muted" id="cmWarning" style="font-size:.78rem;margin-top:16px"></p>
+      </div>
+      <div class="modalfoot">
+        <button class="actbtn primary" onclick="confirmColumnMap()">Continue →</button>
+        <button class="actbtn" onclick="cancelColumnMap()">Cancel</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -1272,17 +1297,61 @@ function questionsFor(key){
   return QUESTIONS[group] || GENERIC_QUESTIONS;
 }
 
+/* Quote-aware CSV/TSV/semicolon-delimited parser: handles BOM, embedded
+   delimiters/newlines inside quoted fields, duplicate headers, and
+   common "missing value" tokens. */
 function parseCSV(text){
-  var lines = text.replace(/\r/g,'').split('\n').filter(function(l){return l.trim().length;});
-  if (!lines.length) return {headers:[], rows:[]};
-  var headers = lines[0].split(',').map(function(h){return h.trim();});
-  var rows = lines.slice(1).map(function(line){
-    var cells = line.split(',');
+  if (!text) return {headers:[], rows:[]};
+  if (text.charCodeAt(0)===0xFEFF) text = text.slice(1);
+  text = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n');
+
+  var firstLine = (text.split('\n').filter(function(l){return l.trim().length;})[0]) || '';
+  var counts = {',':(firstLine.match(/,/g)||[]).length, ';':(firstLine.match(/;/g)||[]).length, '\t':(firstLine.match(/\t/g)||[]).length};
+  var delim = ',';
+  if (counts[';']>counts[delim]) delim=';';
+  if (counts['\t']>counts[delim]) delim='\t';
+
+  var allRows = [], field = '', row = [], inQuotes = false;
+  for (var i=0; i<text.length; i++){
+    var c = text[i];
+    if (inQuotes){
+      if (c==='"'){ if (text[i+1]==='"'){ field+='"'; i++; } else inQuotes=false; }
+      else field += c;
+    } else {
+      if (c==='"') inQuotes = true;
+      else if (c===delim){ row.push(field); field=''; }
+      else if (c==='\n'){ row.push(field); allRows.push(row); row=[]; field=''; }
+      else field += c;
+    }
+  }
+  if (field.length || row.length){ row.push(field); allRows.push(row); }
+  allRows = allRows.filter(function(r){ return r.some(function(cell){return cell.trim().length;}); });
+  if (!allRows.length) return {headers:[], rows:[]};
+
+  var seen = {};
+  var headers = allRows[0].map(function(h){
+    var base = h.trim() || 'Column';
+    seen[base] = (seen[base]||0)+1;
+    return seen[base]>1 ? base+' ('+seen[base]+')' : base;
+  });
+
+  var missingTokens = ['na','n/a','nan','null','-','--','none'];
+  var plainNumRe = /^-?\d+(\.\d+)?$/;
+  var rows = allRows.slice(1).map(function(cells){
     var obj = {};
-    headers.forEach(function(h,i){
-      var raw = (cells[i]!==undefined ? cells[i] : '').trim();
-      var isNum = raw!=='' && /^-?\d+(\.\d+)?$/.test(raw);
-      obj[h] = isNum ? parseFloat(raw) : raw;
+    headers.forEach(function(h,idx){
+      var raw = (cells[idx]!==undefined ? cells[idx] : '').trim();
+      if (raw==='' || missingTokens.indexOf(raw.toLowerCase())!==-1){ obj[h] = null; return; }
+      if (plainNumRe.test(raw)){ obj[h] = parseFloat(raw); return; }
+      if (delim===';'){
+        // European locale: comma is the decimal separator, '.' (if present) is a thousands separator
+        var euroNum = raw.replace(/\./g,'').replace(',', '.');
+        if (plainNumRe.test(euroNum)){ obj[h] = parseFloat(euroNum); return; }
+      } else {
+        var deThousanded = raw.replace(/,/g,'');
+        if (deThousanded!==raw && plainNumRe.test(deThousanded)){ obj[h] = parseFloat(deThousanded); return; }
+      }
+      obj[h] = raw;
     });
     return obj;
   });
@@ -1290,10 +1359,12 @@ function parseCSV(text){
 }
 
 function inferColumns(headers, rows){
+  var dateLikeRe = /^\d{1,4}[\/\-.]\d{1,2}[\/\-.]\d{1,4}([ T]\d{1,2}:\d{2}(:\d{2})?)?$|^\d{1,2}:\d{2}(:\d{2})?$/;
   return headers.map(function(h,i){
-    var sample = rows.slice(0,25).map(function(r){return r[h];});
+    var sample = rows.slice(0,50).map(function(r){return r[h];}).filter(function(v){return v!==null && v!==undefined;});
     var numericCount = sample.filter(function(v){return typeof v==='number';}).length;
     var isNumeric = sample.length>0 && numericCount >= sample.length*0.7;
+    var isDateLike = !isNumeric && sample.length>0 && sample.filter(function(v){return typeof v==='string' && dateLikeRe.test(v.trim());}).length >= sample.length*0.7;
     var decimals = 2;
     if (isNumeric){
       var fracDigits = sample.filter(function(v){return typeof v==='number';}).map(function(v){
@@ -1305,9 +1376,11 @@ function inferColumns(headers, rows){
     var unitMatch = h.match(/\(([^)]+)\)/);
     var label = h.replace(/\([^)]*\)/,'').trim() || h;
     return {key:h, label:label, unit: unitMatch?unitMatch[1]:'', decimals: isNumeric?decimals:null,
-      isX: i===0, _numeric: isNumeric};
+      isX:false, _numeric: isNumeric, _dateLike: isDateLike};
   });
 }
+
+var pendingUpload = null;
 
 function handleFileUpload(file){
   document.getElementById('parsingText').textContent = 'Reading '+file.name+'…';
@@ -1317,32 +1390,94 @@ function handleFileUpload(file){
     setTimeout(function(){
       document.getElementById('parsingText').textContent = 'Detecting columns…';
       setTimeout(function(){
-        var parsed = parseCSV(String(e.target.result));
-        var columns = inferColumns(parsed.headers, parsed.rows);
-        var numericCols = columns.filter(function(c){return c._numeric;});
         document.getElementById('parsingRow').classList.remove('on');
-        if (!parsed.rows.length || numericCols.length<1){
-          alert('Could not detect any numeric columns in this file. Make sure the first row is a header row.');
+        var parsed;
+        try { parsed = parseCSV(String(e.target.result)); }
+        catch(err){ alert('Could not read "'+file.name+'": '+err.message); return; }
+        if (!parsed.rows.length){
+          alert('No data rows found in "'+file.name+'". Make sure the file has a header row followed by data rows, and is a plain CSV/TSV export (not an .xlsx file renamed to .csv).');
           return;
         }
-        var xCol = columns[0];
-        var yDefaults = numericCols.filter(function(c){return c.key!==xCol.key;}).slice(0,2).map(function(c){return c.key;});
-        if (!yDefaults.length) yDefaults = [numericCols[0].key];
-        DATASETS.custom = {
-          filename: file.name,
-          sheet: 'Sheet1',
-          meta: {Rows_detected: parsed.rows.length, Columns_detected: parsed.headers.length,
-            Uploaded: new Date().toLocaleString()},
-          columns: columns,
-          defaultX: xCol.key,
-          defaultY: yDefaults,
-          gen: function(){ return parsed.rows; }
-        };
-        initWorkspace('custom');
+        var columns = inferColumns(parsed.headers, parsed.rows);
+        var numericCols = columns.filter(function(c){return c._numeric;});
+        if (numericCols.length<1){
+          alert('Could not detect any numeric columns in "'+file.name+'".\n\nColumns found: '+parsed.headers.join(', ')+
+            '\n\nCheck that numeric values use "." as the decimal point, and that the first row is a header row.');
+          return;
+        }
+        openColumnMapModal(file.name, parsed, columns, numericCols);
       }, 350);
     }, 300);
   };
+  reader.onerror = function(){
+    document.getElementById('parsingRow').classList.remove('on');
+    alert('Could not read "'+file.name+'" — the file may be corrupted or unreadable.');
+  };
   reader.readAsText(file);
+}
+
+function openColumnMapModal(filename, parsed, columns, numericCols){
+  pendingUpload = {filename:filename, parsed:parsed, columns:columns};
+  document.getElementById('cmFileName').textContent = filename;
+  document.getElementById('cmRowCount').textContent = parsed.rows.length.toLocaleString();
+  document.getElementById('cmColCount').textContent = columns.length;
+
+  var bestX = numericCols[0].key;
+  var xSelect = document.getElementById('cmXSelect');
+  xSelect.innerHTML = columns.map(function(c){
+    return '<option value="'+c.key+'"'+(c._numeric?'':' disabled')+'>'+c.label+(c._numeric?'':(c._dateLike?' (date/time — not numeric)':' (not numeric)'))+'</option>';
+  }).join('');
+  xSelect.value = bestX;
+  renderColumnMapYChecks(bestX, numericCols);
+
+  var nonNumeric = columns.filter(function(c){return !c._numeric;});
+  document.getElementById('cmWarning').textContent = nonNumeric.length
+    ? nonNumeric.length+' column(s) — '+nonNumeric.map(function(c){return c.label;}).join(', ')+' — weren\'t recognized as numeric and can\'t be charted.'
+    : '';
+
+  document.getElementById('columnMapModal').classList.add('on');
+}
+
+function renderColumnMapYChecks(xKey, numericCols){
+  var yChecks = document.getElementById('cmYChecks');
+  yChecks.innerHTML = numericCols.filter(function(c){return c.key!==xKey;}).map(function(c,i){
+    var checked = i<3 ? 'checked' : '';
+    return '<label style="display:flex;align-items:center;gap:8px;font-size:.86rem"><input type="checkbox" class="cmYCheck" value="'+c.key+'" '+checked+'> '+c.label+(c.unit?' ('+c.unit+')':'')+'</label>';
+  }).join('');
+}
+
+function onCmXChange(){
+  if (!pendingUpload) return;
+  var xKey = document.getElementById('cmXSelect').value;
+  var numericCols = pendingUpload.columns.filter(function(c){return c._numeric;});
+  renderColumnMapYChecks(xKey, numericCols);
+}
+
+function cancelColumnMap(){
+  pendingUpload = null;
+  document.getElementById('columnMapModal').classList.remove('on');
+}
+
+function confirmColumnMap(){
+  if (!pendingUpload) return;
+  var xKey = document.getElementById('cmXSelect').value;
+  var yKeys = Array.prototype.slice.call(document.querySelectorAll('.cmYCheck:checked')).map(function(el){return el.value;}).filter(function(k){return k!==xKey;});
+  if (!yKeys.length){ alert('Select at least one Y column to analyze.'); return; }
+
+  var filename = pendingUpload.filename, parsed = pendingUpload.parsed, columns = pendingUpload.columns;
+  columns.forEach(function(c){ c.isX = c.key===xKey; });
+  DATASETS.custom = {
+    filename: filename,
+    sheet: 'Sheet1',
+    meta: {Rows_detected: parsed.rows.length, Columns_detected: columns.length, Uploaded: new Date().toLocaleString()},
+    columns: columns,
+    defaultX: xKey,
+    defaultY: yKeys,
+    gen: function(){ return parsed.rows; }
+  };
+  document.getElementById('columnMapModal').classList.remove('on');
+  pendingUpload = null;
+  initWorkspace('custom');
 }
 
 function loadDataset(key){
@@ -1431,7 +1566,7 @@ function renderPreview(){
         var cls = v==='OK'?'status-ok':(v==='Degrading'?'status-warn':'status-crit');
         return '<td class="'+cls+'">'+v+'</td>';
       }
-      return '<td class="num">'+(c.decimals!=null?v.toFixed(c.decimals):v)+'</td>';
+      return '<td class="num">'+(v==null?'—':(c.decimals!=null && typeof v==='number'?v.toFixed(c.decimals):v))+'</td>';
     }).join('') + '</tr>';
   }).join('') + '</tbody>';
   document.getElementById('previewTable').innerHTML = thead+tbody;
@@ -1561,7 +1696,8 @@ function primarySeries(){
   var rows = state.filtered.length ? state.filtered : state.rows;
   var k = state.yKeys[0];
   if (!k) return null;
-  var sorted = rows.slice().sort(function(a,b){return a[state.xKey]-b[state.xKey];});
+  var clean = rows.filter(function(r){return typeof r[state.xKey]==='number' && typeof r[k]==='number';});
+  var sorted = clean.slice().sort(function(a,b){return a[state.xKey]-b[state.xKey];});
   return {key:k, col:colFor(k), pts: sorted.map(function(r){return {x:r[state.xKey], y:r[k]};})};
 }
 
@@ -1731,16 +1867,18 @@ function renderInterpolation(){
   var xRaw = document.getElementById('interpX').value;
   if (xRaw===''){ el.innerHTML = 'Enter an X value first.'; return; }
   var x = parseFloat(xRaw);
-  var rows = (state.filtered.length ? state.filtered : state.rows).slice().sort(function(a,b){return a[state.xKey]-b[state.xKey];});
-  if (rows.length<2){ el.innerHTML = 'Not enough data to interpolate.'; return; }
-  var xs = rows.map(function(r){return r[state.xKey];});
-  var xMin = xs[0], xMax = xs[xs.length-1];
+  var allRows = state.filtered.length ? state.filtered : state.rows;
+  var xRows = allRows.filter(function(r){return typeof r[state.xKey]==='number';}).slice().sort(function(a,b){return a[state.xKey]-b[state.xKey];});
+  if (xRows.length<2){ el.innerHTML = 'Not enough data to interpolate.'; return; }
+  var xMin = xRows[0][state.xKey], xMax = xRows[xRows.length-1][state.xKey];
   if (x<xMin || x>xMax){
     el.innerHTML = '<span class="badge fail">OUT OF RANGE</span><span class="detail">'+labelFor(state.xKey)+' ranges from '+formatTick(xMin)+' to '+formatTick(xMax)+' in the loaded data — pick a value inside that range.</span>';
     return;
   }
   var keys = state.yKeys.length ? state.yKeys : [state.cfg.defaultY[0]];
   var results = keys.map(function(k){
+    var rows = xRows.filter(function(r){return typeof r[k]==='number';});
+    if (rows.length<2) return colFor(k).label+' — not enough numeric data to interpolate';
     var i = 0;
     while (i<rows.length-1 && rows[i+1][state.xKey]<x) i++;
     var r0 = rows[i], r1 = rows[Math.min(i+1, rows.length-1)];
@@ -1849,7 +1987,12 @@ function drawChart(){
 
   var visKeys = state.yKeys.filter(function(k){return state.visibleSeries.indexOf(k)>=0;});
   if (!visKeys.length){ return; }
-  var rows = state.filtered.length ? state.filtered : state.rows;
+  var rows = (state.filtered.length ? state.filtered : state.rows).filter(function(r){
+    if (typeof r[state.xKey]!=='number') return false;
+    return visKeys.every(function(k){return typeof r[k]==='number';});
+  });
+  if (!rows.length){ ctx.fillStyle=colors['ink-muted']; ctx.font='13px sans-serif'; ctx.textAlign='center';
+    ctx.fillText('No complete rows for the selected columns (all have missing values).', cssW/2, cssH/2); return; }
 
   if (state.chartType==='histogram'){
     drawHistogramChart(ctx, cssW, cssH, colors, rows, visKeys[0]);
