@@ -290,6 +290,7 @@
   .batchremove:hover{color:var(--critical)}
   #waterfallCanvas{height:220px}
   #batchOverlayCanvas{height:300px}
+  #batchEnvelopeCanvas{height:280px}
   .cmp2grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
   #cmpChartA, #cmpChartB{height:220px}
   @media(max-width:760px){ .cmp2grid{grid-template-columns:1fr} }
@@ -499,6 +500,14 @@
       </section>
 
       <section class="panel">
+        <div class="panelhead"><h2>Correlation matrix</h2></div>
+        <p class="muted" style="font-size:.78rem;max-width:56ch">How every numeric column moves together —
+          +1 means two variables rise and fall in lockstep, -1 means one rises as the other falls, near 0 means
+          no relationship. Useful for spotting a hidden driver (e.g. temperature quietly affecting stress).</p>
+        <div class="tblwrap" id="corrMatrixWrap" style="margin-top:12px"></div>
+      </section>
+
+      <section class="panel">
         <div class="panelhead"><h2>Spec compliance</h2></div>
         <div class="speclimits">
           <div class="field"><label>Lower limit</label><input class="numinput" type="number" id="specLower" step="any" oninput="onControlsChange(true)"></div>
@@ -516,6 +525,24 @@
           whether the process spread could fit inside spec if centered; Cpk accounts for how off-center it
           actually is — the number that matters for real capability.</p>
         <div class="statsgrid" id="capabilityGrid" style="margin-top:12px"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panelhead"><h2>SPC control chart (individuals)</h2></div>
+        <p class="muted" style="font-size:.78rem;max-width:56ch">Plots every reading in sequence against control
+          limits (mean ± 3σ) computed from the data itself. Unlike a single pass/fail check, this catches a
+          process drifting or shifting before any point actually goes out of spec.</p>
+        <div class="chartbox" style="margin-top:12px"><canvas id="spcCanvas"></canvas></div>
+        <p class="fitinfo" id="spcNote" style="margin-top:10px"></p>
+      </section>
+
+      <section class="panel">
+        <div class="panelhead"><h2>Fatigue cycle counting (rainflow)</h2></div>
+        <p class="muted" style="font-size:.78rem;max-width:56ch">Counts full stress/load cycles in the primary
+          variable using the rainflow method — the industry-standard way to turn irregular, real-world loading
+          into a proper cycle count for fatigue-life calculations, instead of just reading peak-to-peak.</p>
+        <div class="tblwrap" id="rainflowWrap" style="margin-top:12px"></div>
+        <p class="fitinfo" id="rainflowNote" style="margin-top:10px"></p>
       </section>
 
       <section class="panel">
@@ -652,6 +679,14 @@
         <div class="legend" id="batchLegend"></div>
         <p class="muted" style="font-size:.76rem;margin-top:10px">X = % of test progress, Y = % of each
           file's own peak — this is what makes files with different lengths and units comparable at a glance.</p>
+      </section>
+
+      <section class="panel" id="batchEnvelopePanel" style="display:none;margin-top:18px">
+        <div class="panelhead"><h2>Envelope — normal range across the batch</h2></div>
+        <div class="chartbox"><canvas id="batchEnvelopeCanvas"></canvas></div>
+        <p class="muted" style="font-size:.76rem;margin-top:10px">The shaded band is the min-to-max spread across
+          every loaded part at each point in the test, with the average as a solid line — any part poking outside
+          the band is immediately obvious, instead of hunting through overlapping lines.</p>
       </section>
 
       <section class="panel" id="batchTablePanel" style="display:none;margin-top:18px">
@@ -1690,6 +1725,9 @@ function onControlsChange(skipCtrlRead){
   renderForecast();
   renderProcessCapability();
   renderSafetyFactor();
+  renderCorrelationMatrix();
+  drawSPCChart();
+  renderRainflow();
 }
 
 function primarySeries(){
@@ -1749,6 +1787,52 @@ function renderXcorrNote(){
     el.innerHTML = '<b>Signal relationship:</b> '+labelFor(visKeys[1])+' is most correlated with '+labelFor(visKeys[0])+
       ' at a lag of <b>'+res.lag+' sample'+(Math.abs(res.lag)>1?'s':'')+'</b> (r = '+res.r.toFixed(2)+').';
   }
+}
+
+function pearsonCorr(xs, ys){
+  var n = xs.length;
+  if (n<3) return null;
+  var xMean = xs.reduce(function(a,b){return a+b;},0)/n;
+  var yMean = ys.reduce(function(a,b){return a+b;},0)/n;
+  var num=0, denX=0, denY=0;
+  for (var i=0;i<n;i++){
+    var dx=xs[i]-xMean, dy=ys[i]-yMean;
+    num += dx*dy; denX += dx*dx; denY += dy*dy;
+  }
+  if (denX===0 || denY===0) return null;
+  return num/Math.sqrt(denX*denY);
+}
+
+function corrCellColor(r){
+  if (r==null) return 'transparent';
+  var a = Math.min(1, Math.abs(r));
+  return r>=0 ? 'rgba(27,175,122,'+(a*0.55).toFixed(2)+')' : 'rgba(208,59,59,'+(a*0.55).toFixed(2)+')';
+}
+
+function renderCorrelationMatrix(){
+  var wrap = document.getElementById('corrMatrixWrap');
+  if (!wrap) return;
+  var cols = state.cfg.columns.filter(function(c){return c.decimals!=null;});
+  var rows = state.filtered.length ? state.filtered : state.rows;
+  if (cols.length<2 || rows.length<3){ wrap.innerHTML = '<p class="muted" style="font-size:.82rem">Not enough numeric columns or data to compute correlations.</p>'; return; }
+
+  var series = {};
+  cols.forEach(function(c){ series[c.key] = rows.map(function(r){return r[c.key];}); });
+
+  var thead = '<thead><tr><th></th>'+cols.map(function(c){return '<th>'+c.label+'</th>';}).join('')+'</tr></thead>';
+  var tbody = '<tbody>'+cols.map(function(rc){
+    return '<tr><th style="text-align:left">'+rc.label+'</th>'+cols.map(function(cc){
+      if (rc.key===cc.key) return '<td class="num" style="background:var(--surface-1);color:var(--ink-muted)">—</td>';
+      var pairsX=[], pairsY=[];
+      var a = series[rc.key], b = series[cc.key];
+      for (var i=0;i<a.length;i++){ if (typeof a[i]==='number' && typeof b[i]==='number'){ pairsX.push(a[i]); pairsY.push(b[i]); } }
+      var r = pearsonCorr(pairsX, pairsY);
+      var bg = corrCellColor(r);
+      return '<td class="num" style="background:'+bg+'">'+(r==null?'—':r.toFixed(2))+'</td>';
+    }).join('')+'</tr>';
+  }).join('')+'</tbody>';
+  wrap.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:.8rem">'+thead+tbody+'</table>'+
+    '<p class="muted" style="font-size:.74rem;margin-top:8px">Green = move together, red = move opposite, darker = stronger relationship.</p>';
 }
 
 function renderSpecCompliance(){
@@ -1862,6 +1946,154 @@ function renderProcessCapability(){
   }
 }
 
+function drawSPCChart(){
+  var canvas = document.getElementById('spcCanvas');
+  var note = document.getElementById('spcNote');
+  if (!canvas) return;
+  var box = canvas.parentElement;
+  var cssW = box.clientWidth, cssH = 220;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = cssW*dpr; canvas.height = cssH*dpr;
+  canvas.style.width = cssW+'px'; canvas.style.height = cssH+'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+
+  var css = getComputedStyle(document.querySelector('.viz-root'));
+  var colors = {};
+  ['s1','grid','baseline','ink-muted','critical','warn','good'].forEach(function(v){ colors[v] = css.getPropertyValue('--'+v).trim(); });
+
+  var prim = primarySeries();
+  if (!prim || prim.pts.length<8){
+    if (note) note.textContent = 'Need at least 8 valid readings to build a control chart.';
+    return;
+  }
+  var vals = prim.pts.map(function(p){return p.y;});
+  var n = vals.length;
+  var mean = vals.reduce(function(a,b){return a+b;},0)/n;
+  var std = Math.sqrt(vals.reduce(function(a,b){return a+Math.pow(b-mean,2);},0)/n);
+  var ucl = mean+3*std, lcl = mean-3*std;
+
+  var beyondLimits = [];
+  vals.forEach(function(v,i){ if (v>ucl || v<lcl) beyondLimits.push(i); });
+  var runViolations = [];
+  var runLen = 1, runSide = vals[0]>mean ? 1 : (vals[0]<mean ? -1 : 0);
+  for (var i=1;i<n;i++){
+    var side = vals[i]>mean ? 1 : (vals[i]<mean ? -1 : 0);
+    if (side!==0 && side===runSide){ runLen++; if (runLen===8) runViolations.push(i); }
+    else { runSide = side; runLen = side===0?0:1; }
+  }
+
+  var padL=54, padR=16, padT=14, padB=26;
+  var plotW = cssW-padL-padR, plotH = cssH-padT-padB;
+  var yMin = Math.min.apply(null, vals.concat([lcl])), yMax = Math.max.apply(null, vals.concat([ucl]));
+  var pad = (yMax-yMin)*0.08 || 1;
+  yMin -= pad; yMax += pad;
+  function px(i){ return padL + (n>1 ? i/(n-1)*plotW : plotW/2); }
+  function py(v){ return padT+plotH-((v-yMin)/(yMax-yMin))*plotH; }
+
+  ctx.strokeStyle = colors['grid']; ctx.lineWidth=1; ctx.font='10px ui-monospace,monospace'; ctx.fillStyle = colors['ink-muted'];
+  [yMin+pad, mean, ucl, lcl].forEach(function(v){
+    var yp = py(v);
+    ctx.beginPath(); ctx.moveTo(padL,yp); ctx.lineTo(cssW-padR,yp); ctx.stroke();
+  });
+  ctx.textAlign='right'; ctx.textBaseline='middle';
+  ctx.fillText('UCL '+formatTick(ucl), padL-6, py(ucl));
+  ctx.fillText('Mean '+formatTick(mean), padL-6, py(mean));
+  ctx.fillText('LCL '+formatTick(lcl), padL-6, py(lcl));
+
+  ctx.strokeStyle = colors['critical']; ctx.setLineDash([5,4]);
+  ctx.beginPath(); ctx.moveTo(padL,py(ucl)); ctx.lineTo(cssW-padR,py(ucl)); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(padL,py(lcl)); ctx.lineTo(cssW-padR,py(lcl)); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.strokeStyle = colors['baseline'];
+  ctx.beginPath(); ctx.moveTo(padL,py(mean)); ctx.lineTo(cssW-padR,py(mean)); ctx.stroke();
+
+  ctx.strokeStyle = colors['s1']; ctx.lineWidth=1.6; ctx.beginPath();
+  vals.forEach(function(v,i){ var xp=px(i), yp=py(v); if(i===0) ctx.moveTo(xp,yp); else ctx.lineTo(xp,yp); });
+  ctx.stroke();
+  vals.forEach(function(v,i){
+    var xp=px(i), yp=py(v);
+    var outOfControl = v>ucl || v<lcl;
+    ctx.fillStyle = outOfControl ? colors['critical'] : colors['s1'];
+    ctx.beginPath(); ctx.arc(xp,yp,outOfControl?3.5:2,0,Math.PI*2); ctx.fill();
+  });
+
+  if (note){
+    var parts = [];
+    if (beyondLimits.length) parts.push('<b>'+beyondLimits.length+' point(s) beyond the 3σ control limits</b> — an out-of-control signal, not just a spec violation.');
+    if (runViolations.length) parts.push('<b>'+runViolations.length+' run(s) of 8+ consecutive points on one side of the mean</b> — indicates a process shift, even though every point may be inside the limits.');
+    note.innerHTML = parts.length ? parts.join(' ') : 'Process looks statistically stable — no out-of-control points or sustained shifts detected.';
+  }
+}
+
+function rainflowCount(values){
+  // Turning points (peaks/valleys) extraction
+  var pts = [];
+  for (var i=0;i<values.length;i++){
+    if (i===0 || i===values.length-1){ pts.push(values[i]); continue; }
+    var prev=values[i-1], cur=values[i], next=values[i+1];
+    if ((cur-prev)*(next-cur) <= 0) pts.push(cur);
+  }
+  // ASTM E1049 simplified 4-point rainflow algorithm
+  var stack = [];
+  var cycles = [];
+  for (var k=0;k<pts.length;k++){
+    stack.push(pts[k]);
+    while (stack.length>=4){
+      var n = stack.length;
+      var X = Math.abs(stack[n-1]-stack[n-2]);
+      var Y = Math.abs(stack[n-2]-stack[n-3]);
+      var Z = Math.abs(stack[n-3]-stack[n-4]);
+      if (X>=Y && Y<=Z){
+        cycles.push({range:Y, mean:(stack[n-2]+stack[n-3])/2, full:true});
+        stack.splice(n-3,2);
+      } else break;
+    }
+  }
+  // remaining half-cycles
+  for (var m=0;m<stack.length-1;m++){
+    cycles.push({range:Math.abs(stack[m+1]-stack[m]), mean:(stack[m+1]+stack[m])/2, full:false});
+  }
+  return cycles;
+}
+
+function renderRainflow(){
+  var wrap = document.getElementById('rainflowWrap');
+  var note = document.getElementById('rainflowNote');
+  if (!wrap) return;
+  var prim = primarySeries();
+  if (!prim || prim.pts.length<5){
+    wrap.innerHTML = '';
+    if (note) note.textContent = 'Need at least 5 valid readings on the primary variable to count cycles.';
+    return;
+  }
+  var vals = prim.pts.map(function(p){return p.y;});
+  var cycles = rainflowCount(vals);
+  if (!cycles.length){ wrap.innerHTML = '<p class="muted" style="font-size:.82rem">No turning points found — this signal doesn\'t vary enough to count cycles.</p>'; if(note) note.textContent=''; return; }
+
+  var maxRange = Math.max.apply(null, cycles.map(function(c){return c.range;})) || 1;
+  var nBins = Math.min(8, Math.max(3, Math.round(Math.sqrt(cycles.length))));
+  var binW = maxRange/nBins || 1;
+  var bins = new Array(nBins).fill(0);
+  cycles.forEach(function(c){
+    var idx = Math.min(nBins-1, Math.floor(c.range/binW));
+    bins[idx] += c.full ? 1 : 0.5;
+  });
+  var col = prim.col, d = col.decimals!=null ? col.decimals : 2;
+  var thead = '<thead><tr><th>'+col.label+' range bin</th><th class="num">Cycle count</th></tr></thead>';
+  var tbody = '<tbody>'+bins.map(function(count,i){
+    var lo = i*binW, hi = (i+1)*binW;
+    return '<tr><td>'+lo.toFixed(d)+' – '+hi.toFixed(d)+' '+(col.unit||'')+'</td><td class="num">'+count.toFixed(1)+'</td></tr>';
+  }).join('')+'</tbody>';
+  wrap.innerHTML = '<table>'+thead+tbody+'</table>';
+  var totalCycles = cycles.reduce(function(s,c){return s+(c.full?1:0.5);},0);
+  var largest = cycles.reduce(function(a,b){return b.range>a.range?b:a;}, cycles[0]);
+  if (note) note.innerHTML = '<b>'+totalCycles.toFixed(1)+' equivalent full cycles</b> counted from '+vals.length+' readings. '+
+    'Largest single range: <b>'+largest.range.toFixed(d)+' '+(col.unit||'')+'</b> (mean '+largest.mean.toFixed(d)+' '+(col.unit||'')+') — '+
+    'that\'s usually the one that matters most for fatigue-life calculations.';
+}
+
 function renderInterpolation(){
   var el = document.getElementById('interpResult');
   var xRaw = document.getElementById('interpX').value;
@@ -1938,7 +2170,16 @@ function toggleSeries(k){
   if (state.showSpectrogram) drawSpectrogram();
   if (state.showWaterfall) drawWaterfall();
   renderLegend(); renderStats(); renderFitInfo(); renderOutlierNote(); renderXcorrNote(); renderSpecCompliance(); renderForecast();
-  renderProcessCapability(); renderSafetyFactor();
+  renderProcessCapability(); renderSafetyFactor(); renderCorrelationMatrix(); drawSPCChart(); renderRainflow();
+}
+
+function percentileOf(sortedVals, p){
+  if (!sortedVals.length) return 0;
+  var idx = (p/100)*(sortedVals.length-1);
+  var lo = Math.floor(idx), hi = Math.ceil(idx);
+  if (lo===hi) return sortedVals[lo];
+  var t = idx-lo;
+  return sortedVals[lo] + t*(sortedVals[hi]-sortedVals[lo]);
 }
 
 function renderStats(){
@@ -1954,6 +2195,7 @@ function renderStats(){
     var variance = vals.reduce(function(a,b){return a+Math.pow(b-mean,2);},0)/vals.length;
     var std = Math.sqrt(variance);
     var max = Math.max.apply(null, vals), min = Math.min.apply(null, vals);
+    var p5 = percentileOf(sorted,5), p95 = percentileOf(sorted,95), p99 = percentileOf(sorted,99);
     var col = colFor(k);
     var d = col.decimals!=null ? col.decimals : 2;
     return '<div class="statcard"><div class="shead"><span class="sw" style="background:var(--'+SERIES_COLORS[i]+')"></span>'+
@@ -1962,7 +2204,10 @@ function renderStats(){
       '<div class="srow"><span>Min</span><b class="num">'+min.toFixed(d)+'</b></div>'+
       '<div class="srow"><span>Average</span><b class="num">'+mean.toFixed(d)+'</b></div>'+
       '<div class="srow"><span>Median</span><b class="num">'+median.toFixed(d)+'</b></div>'+
-      '<div class="srow"><span>Std. deviation</span><b class="num">'+std.toFixed(d)+'</b></div></div>';
+      '<div class="srow"><span>Std. deviation</span><b class="num">'+std.toFixed(d)+'</b></div>'+
+      '<div class="srow"><span>5th percentile</span><b class="num">'+p5.toFixed(d)+'</b></div>'+
+      '<div class="srow"><span>95th percentile</span><b class="num">'+p95.toFixed(d)+'</b></div>'+
+      '<div class="srow"><span>99th percentile</span><b class="num">'+p99.toFixed(d)+'</b></div></div>';
   }).join('');
 }
 
@@ -2824,6 +3069,7 @@ function renderBatchAll(){
   document.getElementById('compareTwoView').style.display = (has && isTwo) ? '' : 'none';
   document.getElementById('batchSpecPanel').style.display = (has && !isTwo) ? '' : 'none';
   document.getElementById('batchOverlayPanel').style.display = (has && !isTwo) ? '' : 'none';
+  document.getElementById('batchEnvelopePanel').style.display = (has && !isTwo) ? '' : 'none';
   document.getElementById('batchTablePanel').style.display = (has && !isTwo) ? '' : 'none';
   if (!has) return;
   if (isTwo){
@@ -2831,6 +3077,7 @@ function renderBatchAll(){
   } else {
     renderBatchTable();
     drawBatchOverlay();
+    drawBatchEnvelope();
     renderBatchLegend();
   }
 }
@@ -3115,6 +3362,87 @@ function drawBatchOverlay(){
     });
     ctx.stroke();
   });
+
+  ctx.fillStyle = colors['ink-muted']; ctx.textAlign='center'; ctx.textBaseline='top';
+  ctx.fillText('test progress →', padL+plotW/2, cssH-padB+9);
+}
+
+function computeBatchEnvelope(nSteps){
+  nSteps = nSteps || 40;
+  var files = batchFiles.filter(function(f){return f.pts && f.pts.length>1;});
+  if (!files.length) return null;
+  var grid = [];
+  for (var s=0; s<=nSteps; s++){
+    var t = s/nSteps;
+    var vals = [];
+    files.forEach(function(f){
+      var xs = f.pts.map(function(p){return p.x;});
+      var xMin = Math.min.apply(null,xs), xMax = Math.max.apply(null,xs);
+      if (xMin===xMax) return;
+      var xTarget = xMin + t*(xMax-xMin);
+      var pts = f.pts, i = 0;
+      while (i<pts.length-1 && pts[i+1].x<xTarget) i++;
+      var p0 = pts[i], p1 = pts[Math.min(i+1,pts.length-1)];
+      var y;
+      if (p1.x===p0.x) y = p0.y;
+      else { var tt=(xTarget-p0.x)/(p1.x-p0.x); y = p0.y + tt*(p1.y-p0.y); }
+      vals.push(y);
+    });
+    if (vals.length){
+      grid.push({t:t, min:Math.min.apply(null,vals), max:Math.max.apply(null,vals), mean: vals.reduce(function(a,b){return a+b;},0)/vals.length});
+    }
+  }
+  return grid;
+}
+
+function drawBatchEnvelope(){
+  var canvas = document.getElementById('batchEnvelopeCanvas');
+  if (!canvas) return;
+  var box = canvas.parentElement;
+  var cssW = box.clientWidth, cssH = 280;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = cssW*dpr; canvas.height = cssH*dpr;
+  canvas.style.width = cssW+'px'; canvas.style.height = cssH+'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+
+  var css = getComputedStyle(document.querySelector('.viz-root'));
+  var colors = {};
+  ['grid','baseline','ink-muted','s1','cmp'].forEach(function(v){ colors[v] = css.getPropertyValue('--'+v).trim(); });
+
+  var envelope = computeBatchEnvelope(40);
+  if (!envelope || envelope.length<2) return;
+
+  var padL=54, padR=16, padT=14, padB=30;
+  var plotW = cssW-padL-padR, plotH = cssH-padT-padB;
+  var allVals = [];
+  envelope.forEach(function(g){ allVals.push(g.min, g.max); });
+  var yMin = Math.min.apply(null, allVals), yMax = Math.max.apply(null, allVals);
+  var padY = (yMax-yMin)*0.08 || 1;
+  yMin -= padY; yMax += padY;
+  function px(t){ return padL + t*plotW; }
+  function py(v){ return padT+plotH-((v-yMin)/(yMax-yMin))*plotH; }
+
+  ctx.strokeStyle = colors['grid']; ctx.lineWidth=1; ctx.font='10px ui-monospace,monospace'; ctx.fillStyle=colors['ink-muted'];
+  for (var i=0;i<=4;i++){
+    var yv = yMin + (yMax-yMin)*i/4, yp = padT+plotH-plotH*i/4;
+    ctx.beginPath(); ctx.moveTo(padL,yp); ctx.lineTo(cssW-padR,yp); ctx.stroke();
+    ctx.textAlign='right'; ctx.textBaseline='middle'; ctx.fillText(formatTick(yv), padL-6, yp);
+  }
+  ctx.strokeStyle = colors['baseline'];
+  ctx.beginPath(); ctx.moveTo(padL,padT+plotH); ctx.lineTo(cssW-padR,padT+plotH); ctx.stroke();
+
+  ctx.fillStyle = colors['s1']; ctx.globalAlpha = 0.18;
+  ctx.beginPath();
+  envelope.forEach(function(g,i){ var xp=px(g.t), yp=py(g.max); if(i===0) ctx.moveTo(xp,yp); else ctx.lineTo(xp,yp); });
+  for (var j=envelope.length-1;j>=0;j--){ var g2=envelope[j]; ctx.lineTo(px(g2.t), py(g2.min)); }
+  ctx.closePath(); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  ctx.strokeStyle = colors['cmp']; ctx.lineWidth=2; ctx.beginPath();
+  envelope.forEach(function(g,i){ var xp=px(g.t), yp=py(g.mean); if(i===0) ctx.moveTo(xp,yp); else ctx.lineTo(xp,yp); });
+  ctx.stroke();
 
   ctx.fillStyle = colors['ink-muted']; ctx.textAlign='center'; ctx.textBaseline='top';
   ctx.fillText('test progress →', padL+plotW/2, cssH-padB+9);
@@ -3689,7 +4017,7 @@ function openDrawingReport(mode){
 window.addEventListener('resize', function(){
   if (state.key){ drawChart(); drawSpectrum(); if(state.showSpectrogram) drawSpectrogram(); if(state.showWaterfall) drawWaterfall(); }
   if (batchFiles.length===2){ renderCmpChartAndStats('A', cmpFileA.file); renderCmpChartAndStats('B', cmpFileB.file); }
-  else if (batchFiles.length){ drawBatchOverlay(); }
+  else if (batchFiles.length){ drawBatchOverlay(); drawBatchEnvelope(); }
   if (document.getElementById('simScreen').classList.contains('on')){
     if (simMode==='hydro') updateSimHydro(); else updateSimSpring();
   }
