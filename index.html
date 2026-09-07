@@ -109,8 +109,16 @@
   .metachip{font-size:.7rem;font-family:ui-monospace,monospace;background:var(--surface-1);
     border:1px solid var(--border);border-radius:6px;padding:3px 8px;color:var(--ink-2)}
 
-  section.panel{margin-top:18px;background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:18px 20px}
+  section.panel{margin-top:18px;background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--border);
+    border-radius:12px;padding:18px 20px;transition:border-left-color .15s}
+  section.panel.status-pass{border-left-color:var(--good)}
+  section.panel.status-warn{border-left-color:var(--warn)}
+  section.panel.status-fail{border-left-color:var(--critical)}
   .panelhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+  #qaVerdictPanel{transition:background-color .15s}
+  #qaVerdictPanel.status-pass{background:var(--good-bg)}
+  #qaVerdictPanel.status-warn{background:var(--warn-bg)}
+  #qaVerdictPanel.status-fail{background:var(--crit-bg)}
 
   /* preview table */
   .tblwrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:260px;overflow-y:auto}
@@ -516,7 +524,7 @@
         <div class="tblwrap" id="corrMatrixWrap" style="margin-top:12px"></div>
       </section>
 
-      <section class="panel">
+      <section class="panel" id="specCompliancePanel">
         <div class="panelhead"><h2>Spec compliance</h2></div>
         <div class="speclimits">
           <div class="field"><label>Lower limit</label><input class="numinput" type="number" id="specLower" step="any" oninput="onControlsChange(true)"></div>
@@ -540,7 +548,7 @@
         <div class="specresult" id="holdCheckResult" style="margin-top:10px"></div>
       </section>
 
-      <section class="panel">
+      <section class="panel" id="capabilityPanel">
         <div class="panelhead"><h2>Process capability (Cp / Cpk)</h2></div>
         <p class="muted" style="font-size:.78rem;max-width:56ch">Uses the same spec limits above. Cp measures
           whether the process spread could fit inside spec if centered; Cpk accounts for how off-center it
@@ -592,7 +600,7 @@
         <div class="specresult" id="interpResult" style="margin-top:10px"></div>
       </section>
 
-      <section class="panel">
+      <section class="panel" id="safetyFactorPanel">
         <div class="panelhead"><h2>Safety factor</h2></div>
         <p class="muted" style="font-size:.78rem;max-width:56ch">Compares the worst observed reading on the
           primary variable against a material/design allowable you enter — the margin before failure.</p>
@@ -1635,6 +1643,7 @@ function initWorkspace(key){
   document.getElementById('fatigueThreshold').value = '';
   document.getElementById('fatigueLifeResult').innerHTML = '';
   state._holdCheck = null; state._fatigueLife = null; state._qaVerdict = null;
+  ['qaVerdictPanel','specCompliancePanel','capabilityPanel','safetyFactorPanel','holdCheckPanel','fatigueLifePanel'].forEach(function(id){ setPanelStatus(id, null); });
   document.getElementById('spectroBox').style.display = 'none';
   document.getElementById('waterfallBox').style.display = 'none';
 
@@ -1916,13 +1925,14 @@ function renderSpecCompliance(){
   var lower = lowerRaw!=='' ? parseFloat(lowerRaw) : null;
   var upper = upperRaw!=='' ? parseFloat(upperRaw) : null;
   var el = document.getElementById('specResult');
-  if (lower===null && upper===null){ el.innerHTML=''; return; }
+  if (lower===null && upper===null){ el.innerHTML=''; setPanelStatus('specCompliancePanel', null); return; }
   var prim = primarySeries();
-  if (!prim){ el.innerHTML=''; return; }
+  if (!prim){ el.innerHTML=''; setPanelStatus('specCompliancePanel', null); return; }
   var violations = prim.pts.filter(function(p){
     return (lower!==null && p.y<lower) || (upper!==null && p.y>upper);
   });
   var pass = violations.length===0;
+  setPanelStatus('specCompliancePanel', pass ? 'pass' : 'fail');
   var worst = violations.length ? violations.reduce(function(a,b){
     var da = Math.max(lower!==null?lower-a.y:0, upper!==null?a.y-upper:0);
     var db = Math.max(lower!==null?lower-b.y:0, upper!==null?b.y-upper:0);
@@ -1978,9 +1988,9 @@ function renderProcessCapability(){
   var upperRaw = document.getElementById('specUpper').value;
   var lower = lowerRaw!=='' ? parseFloat(lowerRaw) : null;
   var upper = upperRaw!=='' ? parseFloat(upperRaw) : null;
-  if (lower===null && upper===null){ grid.innerHTML = '<p class="muted" style="font-size:.82rem">Enter a spec limit above to compute Cp/Cpk.</p>'; gaugeBox.style.display='none'; return; }
+  if (lower===null && upper===null){ grid.innerHTML = '<p class="muted" style="font-size:.82rem">Enter a spec limit above to compute Cp/Cpk.</p>'; gaugeBox.style.display='none'; setPanelStatus('capabilityPanel', null); return; }
   var prim = primarySeries();
-  if (!prim || prim.pts.length<5){ grid.innerHTML = '<p class="muted" style="font-size:.82rem">Not enough data points.</p>'; gaugeBox.style.display='none'; return; }
+  if (!prim || prim.pts.length<5){ grid.innerHTML = '<p class="muted" style="font-size:.82rem">Not enough data points.</p>'; gaugeBox.style.display='none'; setPanelStatus('capabilityPanel', null); return; }
   var ys = prim.pts.map(function(p){return p.y;});
   var mean = ys.reduce(function(a,b){return a+b;},0)/ys.length;
   var std = Math.sqrt(ys.reduce(function(a,b){return a+Math.pow(b-mean,2);},0)/(ys.length-1));
@@ -2007,8 +2017,10 @@ function renderProcessCapability(){
   if (cpkValue!=null){
     gaugeBox.style.display='';
     drawGauge('cpkGauge', cpkValue, {min:0, max:Math.max(2, cpkValue*1.15), zones:[[0,1],[1,1.33],[1.33,Math.max(2,cpkValue*1.15)]], decimals:2, label:'CPK'});
+    setPanelStatus('capabilityPanel', cpkValue>=1.33 ? 'pass' : (cpkValue>=1 ? 'warn' : 'fail'));
   } else {
     gaugeBox.style.display='none';
+    setPanelStatus('capabilityPanel', null);
   }
   cards.push(['Process mean', mean.toFixed(d)+' '+(prim.col.unit||''), '']);
   cards.push(['Process std dev (σ)', std.toFixed(d)+' '+(prim.col.unit||''), '']);
@@ -2214,21 +2226,29 @@ function renderSafetyFactor(){
   var el = document.getElementById('safetyResult');
   var gaugeBox = document.getElementById('safetyGaugeBox');
   var raw = document.getElementById('allowableLimit').value;
-  if (raw===''){ el.innerHTML=''; gaugeBox.style.display='none'; return; }
+  if (raw===''){ el.innerHTML=''; gaugeBox.style.display='none'; setPanelStatus('safetyFactorPanel', null); return; }
   var allowable = parseFloat(raw);
   var prim = primarySeries();
-  if (!prim || !prim.pts.length){ el.innerHTML = 'No data loaded for the primary variable.'; gaugeBox.style.display='none'; return; }
+  if (!prim || !prim.pts.length){ el.innerHTML = 'No data loaded for the primary variable.'; gaugeBox.style.display='none'; setPanelStatus('safetyFactorPanel', null); return; }
   var worst = prim.pts.reduce(function(a,b){return Math.abs(b.y)>Math.abs(a.y)?b:a;});
   var d = prim.col.decimals!=null ? prim.col.decimals : 2;
-  if (allowable===0 || worst.y===0){ el.innerHTML = 'Enter a non-zero allowable limit.'; gaugeBox.style.display='none'; return; }
+  if (allowable===0 || worst.y===0){ el.innerHTML = 'Enter a non-zero allowable limit.'; gaugeBox.style.display='none'; setPanelStatus('safetyFactorPanel', null); return; }
   var sf = Math.abs(allowable/worst.y);
   var cls = sf>=2 ? 'pass' : (sf>=1 ? 'warn' : 'fail');
+  setPanelStatus('safetyFactorPanel', cls);
   var badgeText = sf>=2 ? '✓ COMFORTABLE MARGIN' : (sf>=1 ? '⚠ THIN MARGIN' : '✕ EXCEEDS ALLOWABLE');
   el.innerHTML = '<span class="badge '+cls+'">'+badgeText+'</span>'+
     '<span class="detail">Worst observed '+prim.col.label+' = '+worst.y.toFixed(d)+' '+(prim.col.unit||'')+' vs allowable '+allowable.toFixed(d)+' '+(prim.col.unit||'')+
     ' — safety factor = <b>'+sf.toFixed(2)+'×</b>'+(sf<1?' (already beyond the allowable limit).':'.')+'</span>';
   gaugeBox.style.display='';
   drawGauge('safetyGauge', sf, {min:0, max:Math.max(3, sf*1.15), zones:[[0,1],[1,2],[2,Math.max(3,sf*1.15)]], suffix:'×', decimals:2, label:'SAFETY FACTOR'});
+}
+
+function setPanelStatus(elId, status){
+  var el = document.getElementById(elId);
+  if (!el) return;
+  el.classList.remove('status-pass','status-warn','status-fail');
+  if (status) el.classList.add('status-'+status);
 }
 
 function drawGauge(canvasId, value, opts){
@@ -2283,7 +2303,7 @@ function renderHoldCheck(){
   var panel = document.getElementById('holdCheckPanel');
   if (!panel) return;
   var cfg = state.cfg;
-  if (!cfg.holdPhase || !cfg.pressureKey){ panel.style.display='none'; state._holdCheck=null; return; }
+  if (!cfg.holdPhase || !cfg.pressureKey){ panel.style.display='none'; state._holdCheck=null; setPanelStatus('holdCheckPanel', null); return; }
   panel.style.display='';
   var hp = cfg.holdPhase;
   var holdRows = state.rows.filter(function(r){
@@ -2294,7 +2314,7 @@ function renderHoldCheck(){
   if (holdRows.length<4){
     el.innerHTML = '<p class="muted" style="font-size:.82rem">Not enough data points in the hold window ('+
       hp.from+'–'+hp.to+' '+xUnit+') to evaluate.</p>';
-    state._holdCheck = null; return;
+    state._holdCheck = null; setPanelStatus('holdCheckPanel', null); return;
   }
   var startVal = holdRows[0][cfg.pressureKey], endVal = holdRows[holdRows.length-1][cfg.pressureKey];
   var duration = holdRows[holdRows.length-1][state.xKey] - holdRows[0][state.xKey];
@@ -2306,6 +2326,7 @@ function renderHoldCheck(){
   var d = col.decimals!=null ? col.decimals : 2;
   var cls = pass ? 'pass' : (decayPct <= thr*1.5 ? 'warn' : 'fail');
   state._holdCheck = {status: cls};
+  setPanelStatus('holdCheckPanel', cls);
   el.innerHTML = '<span class="badge '+cls+'">'+(pass?'✓ HOLD PASS':'✕ HOLD FAIL')+'</span>'+
     '<span class="detail">'+col.label+' held '+startVal.toFixed(d)+' → '+endVal.toFixed(d)+' '+(col.unit||'')+
     ' over '+duration.toFixed(1)+' '+xUnit+' ('+decayPct.toFixed(2)+'% decay) — threshold '+thr+'%. '+
@@ -2317,24 +2338,24 @@ function renderFatigueLife(){
   var panel = document.getElementById('fatigueLifePanel');
   if (!panel) return;
   var cfg = state.cfg;
-  if (!cfg.targetCycles){ panel.style.display='none'; state._fatigueLife=null; return; }
+  if (!cfg.targetCycles){ panel.style.display='none'; state._fatigueLife=null; setPanelStatus('fatigueLifePanel', null); return; }
   panel.style.display='';
   var el = document.getElementById('fatigueLifeResult');
   var prim = primarySeries();
   if (!prim || prim.pts.length<5){
     el.innerHTML = '<p class="muted" style="font-size:.82rem">Not enough data to project a trend.</p>';
-    state._fatigueLife = null; return;
+    state._fatigueLife = null; setPanelStatus('fatigueLifePanel', null); return;
   }
   var thrRaw = document.getElementById('fatigueThreshold').value;
   var d = prim.col.decimals!=null ? prim.col.decimals : 2;
   if (thrRaw===''){
     el.innerHTML = '<p class="muted" style="font-size:.82rem">Enter an end-of-life threshold for '+
       prim.col.label+' to project remaining life.</p>';
-    state._fatigueLife = null; return;
+    state._fatigueLife = null; setPanelStatus('fatigueLifePanel', null); return;
   }
   var thr = parseFloat(thrRaw);
   var fit = computeFit(prim.pts, 'linear');
-  if (!fit){ el.innerHTML=''; state._fatigueLife=null; return; }
+  if (!fit){ el.innerHTML=''; state._fatigueLife=null; setPanelStatus('fatigueLifePanel', null); return; }
   var xs = prim.pts.map(function(p){return p.x;});
   var xMax = Math.max.apply(null, xs), xMin = Math.min.apply(null, xs);
   var declining = fit.fn(xMax) < fit.fn(xMin);
@@ -2367,6 +2388,7 @@ function renderFatigueLife(){
   }
   state._fatigueLife = {status: badgeCls, crossing: crossing, target: target};
   el.innerHTML = '<span class="badge '+badgeCls+'">'+badgeText+'</span><span class="detail">'+detail+'</span>';
+  setPanelStatus('fatigueLifePanel', badgeCls);
 }
 
 function renderQaVerdict(){
@@ -2392,12 +2414,14 @@ function renderQaVerdict(){
     panel.innerHTML = '<p class="muted" style="font-size:.82rem">Enter spec limits, an allowable, or a threshold '+
       'in the checks below to build an overall verdict.</p>';
     state._qaVerdict = null;
+    setPanelStatus('qaVerdictPanel', null);
     return;
   }
   var worst = checks.some(function(c){return c.status==='fail';}) ? 'fail'
     : (checks.some(function(c){return c.status==='warn';}) ? 'warn' : 'pass');
   var overallText = worst==='pass' ? '✓ ALL CHECKS PASS' : (worst==='warn' ? '⚠ REVIEW RECOMMENDED' : '✕ FAILS QA');
   state._qaVerdict = {status: worst, checks: checks};
+  setPanelStatus('qaVerdictPanel', worst);
   panel.innerHTML = '<span class="badge '+worst+'" style="font-size:.9rem;padding:8px 16px">'+overallText+'</span>'+
     '<div class="metarow" style="margin-top:10px">'+checks.map(function(c){
       var icon = c.status==='pass' ? '✓' : (c.status==='warn' ? '⚠' : '✕');
