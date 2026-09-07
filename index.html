@@ -167,6 +167,7 @@
   #chartCanvas{height:340px}
   #fftCanvas{height:150px}
   #spectroCanvas{height:150px}
+  #safetyGauge,#cpkGauge{height:120px}
   .fftrow{margin-top:12px;display:flex;align-items:center;gap:8px;font-size:.8rem;color:var(--ink-2)}
   .fftrow input{margin:0}
   .legend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px}
@@ -544,7 +545,10 @@
         <p class="muted" style="font-size:.78rem;max-width:56ch">Uses the same spec limits above. Cp measures
           whether the process spread could fit inside spec if centered; Cpk accounts for how off-center it
           actually is — the number that matters for real capability.</p>
-        <div class="statsgrid" id="capabilityGrid" style="margin-top:12px"></div>
+        <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center;margin-top:12px">
+          <div class="chartbox" id="cpkGaugeBox" style="display:none;width:180px;flex:none"><canvas id="cpkGauge"></canvas></div>
+          <div class="statsgrid" id="capabilityGrid" style="flex:1"></div>
+        </div>
       </section>
 
       <section class="panel">
@@ -572,7 +576,7 @@
           cycle count for this part.</p>
         <div class="filterrow" style="margin-top:10px">
           <div class="field"><label>End-of-life threshold</label>
-            <input class="numinput" type="number" id="fatigueThreshold" step="any" oninput="renderFatigueLife(); renderQaVerdict();"></div>
+            <input class="numinput" type="number" id="fatigueThreshold" step="any" oninput="renderFatigueLife(); renderQaVerdict(); drawChart();"></div>
         </div>
         <div class="specresult" id="fatigueLifeResult" style="margin-top:10px"></div>
       </section>
@@ -595,7 +599,10 @@
         <div class="filterrow" style="margin-top:10px">
           <div class="field"><label id="allowableLabel">Allowable limit</label><input class="numinput" type="number" id="allowableLimit" step="any" oninput="renderSafetyFactor()"></div>
         </div>
-        <div class="specresult" id="safetyResult" style="margin-top:10px"></div>
+        <div style="display:flex;gap:20px;flex-wrap:wrap;align-items:center;margin-top:10px">
+          <div class="chartbox" id="safetyGaugeBox" style="display:none;width:180px;flex:none"><canvas id="safetyGauge"></canvas></div>
+          <div class="specresult" id="safetyResult" style="flex:1"></div>
+        </div>
       </section>
 
       <section class="panel">
@@ -1621,6 +1628,8 @@ function initWorkspace(key){
   document.getElementById('interpResult').innerHTML = '';
   document.getElementById('allowableLimit').value = '';
   document.getElementById('safetyResult').innerHTML = '';
+  document.getElementById('safetyGaugeBox').style.display = 'none';
+  document.getElementById('cpkGaugeBox').style.display = 'none';
   document.getElementById('holdThreshold').value = '2';
   document.getElementById('holdCheckResult').innerHTML = '';
   document.getElementById('fatigueThreshold').value = '';
@@ -1964,31 +1973,42 @@ function renderForecast(){
 function renderProcessCapability(){
   var grid = document.getElementById('capabilityGrid');
   if (!grid) return;
+  var gaugeBox = document.getElementById('cpkGaugeBox');
   var lowerRaw = document.getElementById('specLower').value;
   var upperRaw = document.getElementById('specUpper').value;
   var lower = lowerRaw!=='' ? parseFloat(lowerRaw) : null;
   var upper = upperRaw!=='' ? parseFloat(upperRaw) : null;
-  if (lower===null && upper===null){ grid.innerHTML = '<p class="muted" style="font-size:.82rem">Enter a spec limit above to compute Cp/Cpk.</p>'; return; }
+  if (lower===null && upper===null){ grid.innerHTML = '<p class="muted" style="font-size:.82rem">Enter a spec limit above to compute Cp/Cpk.</p>'; gaugeBox.style.display='none'; return; }
   var prim = primarySeries();
-  if (!prim || prim.pts.length<5){ grid.innerHTML = '<p class="muted" style="font-size:.82rem">Not enough data points.</p>'; return; }
+  if (!prim || prim.pts.length<5){ grid.innerHTML = '<p class="muted" style="font-size:.82rem">Not enough data points.</p>'; gaugeBox.style.display='none'; return; }
   var ys = prim.pts.map(function(p){return p.y;});
   var mean = ys.reduce(function(a,b){return a+b;},0)/ys.length;
   var std = Math.sqrt(ys.reduce(function(a,b){return a+Math.pow(b-mean,2);},0)/(ys.length-1));
   var d = prim.col.decimals!=null ? prim.col.decimals : 2;
   var cards = [];
+  var cpkValue = null;
   if (std>0){
     if (lower!==null && upper!==null){
       var cp = (upper-lower)/(6*std);
       var cpk = Math.min((upper-mean)/(3*std), (mean-lower)/(3*std));
+      cpkValue = cpk;
       cards.push(['Cp', cp.toFixed(2), cp>=1.33?'good':(cp>=1?'ok':'weak')]);
       cards.push(['Cpk', cpk.toFixed(2), cpk>=1.33?'good':(cpk>=1?'ok':'weak')]);
     } else if (upper!==null){
       var cpkU = (upper-mean)/(3*std);
+      cpkValue = cpkU;
       cards.push(['Cpk (upper only)', cpkU.toFixed(2), cpkU>=1.33?'good':(cpkU>=1?'ok':'weak')]);
     } else {
       var cpkL = (mean-lower)/(3*std);
+      cpkValue = cpkL;
       cards.push(['Cpk (lower only)', cpkL.toFixed(2), cpkL>=1.33?'good':(cpkL>=1?'ok':'weak')]);
     }
+  }
+  if (cpkValue!=null){
+    gaugeBox.style.display='';
+    drawGauge('cpkGauge', cpkValue, {min:0, max:Math.max(2, cpkValue*1.15), zones:[[0,1],[1,1.33],[1.33,Math.max(2,cpkValue*1.15)]], decimals:2, label:'CPK'});
+  } else {
+    gaugeBox.style.display='none';
   }
   cards.push(['Process mean', mean.toFixed(d)+' '+(prim.col.unit||''), '']);
   cards.push(['Process std dev (σ)', std.toFixed(d)+' '+(prim.col.unit||''), '']);
@@ -2192,20 +2212,71 @@ function renderInterpolation(){
 
 function renderSafetyFactor(){
   var el = document.getElementById('safetyResult');
+  var gaugeBox = document.getElementById('safetyGaugeBox');
   var raw = document.getElementById('allowableLimit').value;
-  if (raw===''){ el.innerHTML=''; return; }
+  if (raw===''){ el.innerHTML=''; gaugeBox.style.display='none'; return; }
   var allowable = parseFloat(raw);
   var prim = primarySeries();
-  if (!prim || !prim.pts.length){ el.innerHTML = 'No data loaded for the primary variable.'; return; }
+  if (!prim || !prim.pts.length){ el.innerHTML = 'No data loaded for the primary variable.'; gaugeBox.style.display='none'; return; }
   var worst = prim.pts.reduce(function(a,b){return Math.abs(b.y)>Math.abs(a.y)?b:a;});
   var d = prim.col.decimals!=null ? prim.col.decimals : 2;
-  if (allowable===0 || worst.y===0){ el.innerHTML = 'Enter a non-zero allowable limit.'; return; }
+  if (allowable===0 || worst.y===0){ el.innerHTML = 'Enter a non-zero allowable limit.'; gaugeBox.style.display='none'; return; }
   var sf = Math.abs(allowable/worst.y);
   var cls = sf>=2 ? 'pass' : (sf>=1 ? 'warn' : 'fail');
   var badgeText = sf>=2 ? '✓ COMFORTABLE MARGIN' : (sf>=1 ? '⚠ THIN MARGIN' : '✕ EXCEEDS ALLOWABLE');
   el.innerHTML = '<span class="badge '+cls+'">'+badgeText+'</span>'+
     '<span class="detail">Worst observed '+prim.col.label+' = '+worst.y.toFixed(d)+' '+(prim.col.unit||'')+' vs allowable '+allowable.toFixed(d)+' '+(prim.col.unit||'')+
     ' — safety factor = <b>'+sf.toFixed(2)+'×</b>'+(sf<1?' (already beyond the allowable limit).':'.')+'</span>';
+  gaugeBox.style.display='';
+  drawGauge('safetyGauge', sf, {min:0, max:Math.max(3, sf*1.15), zones:[[0,1],[1,2],[2,Math.max(3,sf*1.15)]], suffix:'×', decimals:2, label:'SAFETY FACTOR'});
+}
+
+function drawGauge(canvasId, value, opts){
+  var canvas = document.getElementById(canvasId);
+  if (!canvas) return;
+  var box = canvas.parentElement;
+  var cssW = box.clientWidth || 180, cssH = 120;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = cssW*dpr; canvas.height = cssH*dpr;
+  canvas.style.width = cssW+'px'; canvas.style.height = cssH+'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+
+  var css = getComputedStyle(document.querySelector('.viz-root'));
+  var colors = {};
+  ['ink-1','ink-muted','grid','good','warn','critical'].forEach(function(v){ colors[v]=css.getPropertyValue('--'+v).trim(); });
+
+  var min = opts.min, max = opts.max;
+  var clamped = Math.max(min, Math.min(max, value));
+  var cx = cssW/2, cy = cssH-14, r = Math.min(cssW/2-14, cssH-30);
+  var startAngle = Math.PI, endAngle = 0;
+
+  function angleFor(v){ return startAngle + (v-min)/(max-min) * (endAngle-startAngle); }
+
+  var zoneColors = [colors['critical'], colors['warn'], colors['good']];
+  opts.zones.forEach(function(z, i){
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, angleFor(z[1]), angleFor(z[0]), false);
+    ctx.strokeStyle = zoneColors[i]; ctx.lineWidth = 12; ctx.lineCap='butt';
+    ctx.stroke();
+  });
+
+  var needleAngle = angleFor(clamped);
+  ctx.save();
+  ctx.strokeStyle = colors['ink-1']; ctx.lineWidth = 2.5; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(cx,cy);
+  ctx.lineTo(cx + Math.cos(needleAngle)*(r-16), cy + Math.sin(needleAngle)*(r-16));
+  ctx.stroke();
+  ctx.fillStyle = colors['ink-1'];
+  ctx.beginPath(); ctx.arc(cx,cy,4,0,Math.PI*2); ctx.fill();
+  ctx.restore();
+
+  ctx.fillStyle = colors['ink-1']; ctx.font='bold 16px ui-monospace,monospace';
+  ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  ctx.fillText(value.toFixed(opts.decimals!=null?opts.decimals:2)+(opts.suffix||''), cx, cy-r-6);
+  ctx.fillStyle = colors['ink-muted']; ctx.font='9px ui-monospace,monospace';
+  ctx.fillText(opts.label||'', cx, cssH-2);
 }
 
 function renderHoldCheck(){
@@ -2419,7 +2490,7 @@ function drawChart(){
 
   var css = getComputedStyle(document.querySelector('.viz-root'));
   var colors = {};
-  ['s1','s2','s3','s4','grid','baseline','ink-1','ink-2','ink-muted','panel','cmp','critical'].forEach(function(v){
+  ['s1','s2','s3','s4','grid','baseline','ink-1','ink-2','ink-muted','panel','cmp','critical','warn','good'].forEach(function(v){
     colors[v] = css.getPropertyValue('--'+v).trim();
   });
 
@@ -2510,6 +2581,51 @@ function drawChart(){
   }
   ctx.strokeStyle = colors['baseline']; ctx.lineWidth=1.2;
   ctx.beginPath(); ctx.moveTo(padL, padT+plotH); ctx.lineTo(cssW-padR, padT+plotH); ctx.stroke();
+
+  /* phase bands (ramp / hold / release) for pressure-hold tests */
+  if (state.cfg.holdPhase && state.xKey===state.cfg.defaultX){
+    var hp = state.cfg.holdPhase;
+    var bands = [
+      {label:'RAMP', from:xMin, to:Math.max(xMin,Math.min(hp.from,dataXMax))},
+      {label:'HOLD', from:Math.max(xMin,hp.from), to:Math.min(dataXMax,hp.to)},
+      {label:'RELEASE', from:Math.max(xMin,hp.to), to:dataXMax}
+    ];
+    ctx.save();
+    bands.forEach(function(b, bi){
+      if (b.to<=b.from) return;
+      var bx0 = px(b.from), bx1 = px(b.to);
+      ctx.fillStyle = colors[bi===1 ? 'warn' : 's1']; ctx.globalAlpha = bi===1 ? 0.10 : 0.05;
+      ctx.fillRect(bx0, padT, bx1-bx0, plotH);
+      ctx.globalAlpha = 1; ctx.fillStyle = colors['ink-muted'];
+      ctx.font = '9px ui-monospace,monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+      ctx.fillText(b.label, (bx0+bx1)/2, padT+3);
+    });
+    ctx.restore();
+  }
+
+  /* fatigue end-of-life threshold line */
+  if (state.cfg.targetCycles){
+    var fatThrRaw = document.getElementById('fatigueThreshold') ? document.getElementById('fatigueThreshold').value : '';
+    if (fatThrRaw!==''){
+      var fatThr = parseFloat(fatThrRaw);
+      var series0 = state.yKeys[0];
+      var normFactor = null;
+      if (state.normalize && state.yKeys.filter(function(k){return state.visibleSeries.indexOf(k)>=0;}).length>1){
+        var primRows = (state.filtered.length ? state.filtered : state.rows);
+        var peakAbs = Math.max.apply(null, primRows.map(function(r){return Math.abs(r[series0]);}).filter(function(v){return typeof v==='number';}));
+        normFactor = peakAbs || 1;
+      }
+      var fatYv = normFactor ? fatThr/normFactor*100 : fatThr;
+      var fatYp = py(fatYv);
+      ctx.save();
+      ctx.setLineDash([6,4]); ctx.strokeStyle = colors['warn']; ctx.globalAlpha = 0.9; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(padL, fatYp); ctx.lineTo(cssW-padR, fatYp); ctx.stroke();
+      ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.fillStyle = colors['warn'];
+      ctx.font = '9px ui-monospace,monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'bottom';
+      ctx.fillText('end-of-life threshold', padL+4, fatYp-3);
+      ctx.restore();
+    }
+  }
 
   if (xMax>dataXMax){
     var fzx0 = px(dataXMax), fzx1 = px(xMax);
