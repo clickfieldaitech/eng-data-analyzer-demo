@@ -1569,6 +1569,29 @@ function cancelColumnMap(){
 
 function colFor2(columns, key){ return columns.filter(function(c){return c.key===key;})[0] || {label:key}; }
 
+function detectTypeFields(columns, xKey, rows){
+  var pressureCol = columns.filter(function(c){return c._numeric && /pressure/i.test(c.label);})[0];
+  var xIsTimeLike = /time|second|min(ute)?/i.test(colFor2(columns,xKey).label);
+  var holdPhase = null;
+  if (pressureCol && xIsTimeLike){
+    var xs = rows.map(function(r){return r[xKey];}).filter(function(v){return typeof v==='number';});
+    if (xs.length>=10){
+      var xMin = Math.min.apply(null,xs), xMax = Math.max.apply(null,xs), range = xMax-xMin;
+      holdPhase = {from: xMin+range*0.3, to: xMin+range*0.9};
+    }
+  }
+  var xIsCycleLike = /cycle/i.test(colFor2(columns,xKey).label);
+  var targetCycles = null;
+  if (xIsCycleLike){
+    var cxs = rows.map(function(r){return r[xKey];}).filter(function(v){return typeof v==='number';});
+    if (cxs.length>=10) targetCycles = Math.max.apply(null, cxs);
+  }
+  var loadCol = columns.filter(function(c){return c._numeric && /load(ing)?$/i.test(c.label.trim());})[0];
+  var unloadCol = columns.filter(function(c){return c._numeric && /unload(ing)?$/i.test(c.label.trim());})[0];
+  var hysteresisPair = (loadCol && unloadCol) ? {loadKey:loadCol.key, unloadKey:unloadCol.key} : null;
+  return {holdPhase:holdPhase, pressureKey: pressureCol?pressureCol.key:null, targetCycles:targetCycles, hysteresisPair:hysteresisPair};
+}
+
 function confirmColumnMap(){
   if (!pendingUpload) return;
   var xKey = document.getElementById('cmXSelect').value;
@@ -1578,26 +1601,7 @@ function confirmColumnMap(){
   var filename = pendingUpload.filename, parsed = pendingUpload.parsed, columns = pendingUpload.columns;
   columns.forEach(function(c){ c.isX = c.key===xKey; });
 
-  var pressureCol = columns.filter(function(c){return c._numeric && /pressure/i.test(c.label);})[0];
-  var xIsTimeLike = /time|second|min(ute)?/i.test(colFor2(columns,xKey).label);
-  var holdPhase = null;
-  if (pressureCol && xIsTimeLike){
-    var xs = parsed.rows.map(function(r){return r[xKey];}).filter(function(v){return typeof v==='number';});
-    if (xs.length>=10){
-      var xMin = Math.min.apply(null,xs), xMax = Math.max.apply(null,xs), range = xMax-xMin;
-      holdPhase = {from: xMin+range*0.3, to: xMin+range*0.9};
-    }
-  }
-  var xIsCycleLike = /cycle/i.test(colFor2(columns,xKey).label);
-  var targetCycles = null;
-  if (xIsCycleLike){
-    var cxs = parsed.rows.map(function(r){return r[xKey];}).filter(function(v){return typeof v==='number';});
-    if (cxs.length>=10) targetCycles = Math.max.apply(null, cxs);
-  }
-
-  var loadCol = columns.filter(function(c){return c._numeric && /load(ing)?$/i.test(c.label.trim());})[0];
-  var unloadCol = columns.filter(function(c){return c._numeric && /unload(ing)?$/i.test(c.label.trim());})[0];
-  var hysteresisPair = (loadCol && unloadCol) ? {loadKey:loadCol.key, unloadKey:unloadCol.key} : null;
+  var tf = detectTypeFields(columns, xKey, parsed.rows);
 
   DATASETS.custom = {
     filename: filename,
@@ -1606,9 +1610,9 @@ function confirmColumnMap(){
     columns: columns,
     defaultX: xKey,
     defaultY: yKeys,
-    holdPhase: holdPhase, pressureKey: pressureCol ? pressureCol.key : null,
-    targetCycles: targetCycles,
-    hysteresisPair: hysteresisPair,
+    holdPhase: tf.holdPhase, pressureKey: tf.pressureKey,
+    targetCycles: tf.targetCycles,
+    hysteresisPair: tf.hysteresisPair,
     gen: function(){ return parsed.rows; }
   };
   document.getElementById('columnMapModal').classList.remove('on');
@@ -3421,7 +3425,9 @@ function batchEntryFromKey(key){
     filename: cfg.filename, batch: (cfg.meta && cfg.meta.Batch) || '—',
     primaryKey: primaryKey, primaryLabel: col.label, primaryUnit: col.unit, decimals: col.decimals,
     pts: rows.map(function(r){ return {x:r[cfg.defaultX], y:r[primaryKey]}; }),
-    columns: cfg.columns, xKey: cfg.defaultX, rows: rows
+    columns: cfg.columns, xKey: cfg.defaultX, rows: rows,
+    holdPhase: cfg.holdPhase||null, pressureKey: cfg.pressureKey||null,
+    targetCycles: cfg.targetCycles||null, hysteresisPair: cfg.hysteresisPair||null
   };
 }
 
@@ -3435,16 +3441,48 @@ function batchEntryFromFile(file){
       if (!parsed.rows.length || !numericCols.length){ resolve(null); return; }
       var xCol = columns[0];
       var yCol = numericCols.filter(function(c){return c.key!==xCol.key;})[0] || numericCols[0];
+      var tf = detectTypeFields(columns, xCol.key, parsed.rows);
       resolve({
         filename: file.name, batch: '—',
         primaryKey: yCol.key, primaryLabel: yCol.label, primaryUnit: yCol.unit, decimals: yCol.decimals,
         pts: parsed.rows.map(function(r){ return {x:r[xCol.key], y:r[yCol.key]}; })
           .filter(function(p){ return typeof p.x==='number' && typeof p.y==='number'; }),
-        columns: columns, xKey: xCol.key, rows: parsed.rows
+        columns: columns, xKey: xCol.key, rows: parsed.rows,
+        holdPhase: tf.holdPhase, pressureKey: tf.pressureKey,
+        targetCycles: tf.targetCycles, hysteresisPair: tf.hysteresisPair
       });
     };
     reader.readAsText(file);
   });
+}
+
+function computeTypeCheck(entry){
+  if (entry.holdPhase && entry.pressureKey){
+    var hp = entry.holdPhase;
+    var holdRows = entry.rows.filter(function(r){
+      return r[entry.xKey]>=hp.from && r[entry.xKey]<=hp.to && typeof r[entry.pressureKey]==='number';
+    }).sort(function(a,b){return a[entry.xKey]-b[entry.xKey];});
+    if (holdRows.length<4) return {label:'Hold check', text:'not enough hold-window data', ok:null};
+    var startVal = holdRows[0][entry.pressureKey], endVal = holdRows[holdRows.length-1][entry.pressureKey];
+    var decayPct = startVal!==0 ? (startVal-endVal)/startVal*100 : 0;
+    return {label:'Hold-phase decay', text:decayPct.toFixed(2)+'% (≤2% target)', ok: decayPct<=2};
+  }
+  if (entry.hysteresisPair){
+    var hp2 = entry.hysteresisPair;
+    var rows2 = entry.rows.filter(function(r){return typeof r[entry.xKey]==='number' && typeof r[hp2.loadKey]==='number';})
+      .sort(function(a,b){return a[entry.xKey]-b[entry.xKey];});
+    if (rows2.length<5) return {label:'Linearity', text:'not enough data', ok:null};
+    var pts = rows2.map(function(r){return {x:r[entry.xKey], y:r[hp2.loadKey]};});
+    var fit = computeFit(pts, 'linear');
+    if (!fit) return {label:'Linearity', text:'n/a', ok:null};
+    return {label:'Loading linearity R²', text:fit.r2.toFixed(4)+' (≥0.98 target)', ok: fit.r2>=0.98};
+  }
+  if (entry.targetCycles){
+    var cxs = entry.rows.map(function(r){return r[entry.xKey];}).filter(function(v){return typeof v==='number';});
+    var maxC = cxs.length ? Math.max.apply(null,cxs) : null;
+    return {label:'Cycles logged', text: maxC!=null ? (Math.round(maxC).toLocaleString()+' of '+Math.round(entry.targetCycles).toLocaleString()+' target') : 'n/a', ok:null};
+  }
+  return null;
 }
 
 function comparePair(keyA, keyB){
@@ -3646,12 +3684,18 @@ function renderCmpChartAndStats(panel, file){
   if (!ys.length){ document.getElementById('cmpStats'+panel).innerHTML=''; return; }
   var mean = ys.reduce(function(a,b){return a+b;},0)/ys.length;
   var std = Math.sqrt(ys.reduce(function(a,b){return a+Math.pow(b-mean,2);},0)/ys.length);
+  var tc = computeTypeCheck(file);
+  var tcCard = tc
+    ? '<div class="statcard"><div class="shead"><span class="sname">'+tc.label+'</span></div>'+
+      '<div class="srow"><b class="num '+(tc.ok===null?'':(tc.ok?'status-ok':'status-crit'))+'">'+
+      (tc.ok===null?'':(tc.ok?'✓ ':'✕ '))+tc.text+'</b></div></div>'
+    : '';
   document.getElementById('cmpStats'+panel).innerHTML =
     '<div class="statcard"><div class="shead"><span class="sname">'+col.label+(col.unit?' ('+col.unit+')':'')+'</span></div>'+
     '<div class="srow"><span>Max</span><b class="num">'+Math.max.apply(null,ys).toFixed(d)+'</b></div>'+
     '<div class="srow"><span>Min</span><b class="num">'+Math.min.apply(null,ys).toFixed(d)+'</b></div>'+
     '<div class="srow"><span>Average</span><b class="num">'+mean.toFixed(d)+'</b></div>'+
-    '<div class="srow"><span>Std. deviation</span><b class="num">'+std.toFixed(d)+'</b></div></div>';
+    '<div class="srow"><span>Std. deviation</span><b class="num">'+std.toFixed(d)+'</b></div></div>'+tcCard;
 }
 
 function renderCmpAllStatsTable(panel, file){
@@ -3759,7 +3803,7 @@ function renderBatchTable(){
 
   var g = batchGroupStats();
   var thead = '<thead><tr><th>File</th><th>Batch</th><th>Variable</th><th class="num">Max</th><th class="num">Min</th>'+
-    '<th class="num">Average</th><th class="num">Std Dev</th><th>Drift</th>'+(showSpec?'<th>Spec</th>':'')+'</tr></thead>';
+    '<th class="num">Average</th><th class="num">Std Dev</th><th>Drift</th><th>Type check</th>'+(showSpec?'<th>Spec</th>':'')+'</tr></thead>';
   var rows = g.withStats.map(function(w){
     var d = w.file.decimals!=null ? w.file.decimals : 2;
     var drift = g.groupStd>0 && Math.abs(w.stats.avg-g.groupMean) > 1.5*g.groupStd;
@@ -3769,11 +3813,17 @@ function renderBatchTable(){
       var pass = violations.length===0;
       specCell = '<td><span class="driftflag '+(pass?'ok':'drift')+'">'+(pass?'PASS':'FAIL')+'</span></td>';
     }
+    var tc = computeTypeCheck(w.file);
+    var tcCell = tc
+      ? '<td><span class="driftflag '+(tc.ok===null?'':(tc.ok?'ok':'drift'))+'" title="'+tc.label+'">'+
+        (tc.ok===null?tc.label.toUpperCase():(tc.ok?'✓ ':'✕ ')+tc.label.toUpperCase())+'</span><br>'+
+        '<span class="muted" style="font-size:.68rem">'+tc.text+'</span></td>'
+      : '<td class="muted" style="font-size:.72rem">—</td>';
     return '<tr class="filerow"><td class="mono">'+w.file.filename+'</td><td>'+w.file.batch+'</td>'+
       '<td>'+w.file.primaryLabel+(w.file.primaryUnit?' ('+w.file.primaryUnit+')':'')+'</td>'+
       '<td class="num">'+w.stats.max.toFixed(d)+'</td><td class="num">'+w.stats.min.toFixed(d)+'</td>'+
       '<td class="num">'+w.stats.avg.toFixed(d)+'</td><td class="num">'+w.stats.std.toFixed(d)+'</td>'+
-      '<td><span class="driftflag '+(drift?'drift':'ok')+'">'+(drift?'⚠ DRIFT':'OK')+'</span></td>'+specCell+'</tr>';
+      '<td><span class="driftflag '+(drift?'drift':'ok')+'">'+(drift?'⚠ DRIFT':'OK')+'</span></td>'+tcCell+specCell+'</tr>';
   }).join('');
   document.getElementById('batchTable').innerHTML = thead + '<tbody>' + rows + '</tbody>';
 }
