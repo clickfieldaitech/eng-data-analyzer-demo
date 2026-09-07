@@ -1529,6 +1529,8 @@ function cancelColumnMap(){
   document.getElementById('columnMapModal').classList.remove('on');
 }
 
+function colFor2(columns, key){ return columns.filter(function(c){return c.key===key;})[0] || {label:key}; }
+
 function confirmColumnMap(){
   if (!pendingUpload) return;
   var xKey = document.getElementById('cmXSelect').value;
@@ -1537,6 +1539,24 @@ function confirmColumnMap(){
 
   var filename = pendingUpload.filename, parsed = pendingUpload.parsed, columns = pendingUpload.columns;
   columns.forEach(function(c){ c.isX = c.key===xKey; });
+
+  var pressureCol = columns.filter(function(c){return c._numeric && /pressure/i.test(c.label);})[0];
+  var xIsTimeLike = /time|second|min(ute)?/i.test(colFor2(columns,xKey).label);
+  var holdPhase = null;
+  if (pressureCol && xIsTimeLike){
+    var xs = parsed.rows.map(function(r){return r[xKey];}).filter(function(v){return typeof v==='number';});
+    if (xs.length>=10){
+      var xMin = Math.min.apply(null,xs), xMax = Math.max.apply(null,xs), range = xMax-xMin;
+      holdPhase = {from: xMin+range*0.3, to: xMin+range*0.9};
+    }
+  }
+  var xIsCycleLike = /cycle/i.test(colFor2(columns,xKey).label);
+  var targetCycles = null;
+  if (xIsCycleLike){
+    var cxs = parsed.rows.map(function(r){return r[xKey];}).filter(function(v){return typeof v==='number';});
+    if (cxs.length>=10) targetCycles = Math.max.apply(null, cxs);
+  }
+
   DATASETS.custom = {
     filename: filename,
     sheet: 'Sheet1',
@@ -1544,6 +1564,8 @@ function confirmColumnMap(){
     columns: columns,
     defaultX: xKey,
     defaultY: yKeys,
+    holdPhase: holdPhase, pressureKey: pressureCol ? pressureCol.key : null,
+    targetCycles: targetCycles,
     gen: function(){ return parsed.rows; }
   };
   document.getElementById('columnMapModal').classList.remove('on');
