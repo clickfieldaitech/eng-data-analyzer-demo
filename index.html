@@ -622,6 +622,18 @@
         </div>
       </section>
 
+      <section class="panel statuscard" id="springCheckPanel" style="display:none">
+        <div class="panelhead"><h2>Spring linearity & hysteresis check</h2></div>
+        <p class="muted" style="font-size:.78rem;max-width:56ch">Checks the loading curve stays linear (a
+          nonlinear force/displacement curve usually means a manufacturing defect) and that the loading vs
+          unloading hysteresis loop — the energy dissipated per cycle — stays under a set limit.</p>
+        <div class="filterrow" style="margin-top:10px">
+          <div class="field"><label>Min linearity R²</label><input class="numinput" type="number" id="linearityThreshold" step="any" value="0.98" oninput="renderSpringCheck(); renderQaVerdict();"></div>
+          <div class="field"><label>Max hysteresis work (N·mm)</label><input class="numinput" type="number" id="hysteresisThreshold" step="any" oninput="renderSpringCheck(); renderQaVerdict();"></div>
+        </div>
+        <div class="specresult" id="springCheckResult" style="margin-top:10px"></div>
+      </section>
+
       <section class="panel">
         <div class="panelhead"><h2>Filter</h2></div>
         <div class="filterrow">
@@ -1104,6 +1116,7 @@ var DATASETS = {
     filename: 'Bellows_SpringRate_B2026-11.xlsx',
     sheet: 'SpringRate_S03',
     compareGroup: 'spring',
+    hysteresisPair: {loadKey:'Force_Loading_N', unloadKey:'Force_Unloading_N'},
     meta: {Bellows_Model:'MB-EJ-1850', Material:'SS321', Batch:'B-2026-11', Sample:'S-03 of 5',
       Engineer:'K. Elango', Standard:'EJMA 10th Ed. §3.1'},
     columns: [
@@ -1131,6 +1144,7 @@ var DATASETS = {
     filename: 'Bellows_SpringRate_B2026-14.xlsx',
     sheet: 'SpringRate_S01',
     compareGroup: 'spring',
+    hysteresisPair: {loadKey:'Force_Loading_N', unloadKey:'Force_Unloading_N'},
     meta: {Bellows_Model:'MB-EJ-1850', Material:'SS321', Batch:'B-2026-14', Sample:'S-01 of 5',
       Engineer:'K. Elango', Standard:'EJMA 10th Ed. §3.1'},
     columns: [
@@ -1581,6 +1595,10 @@ function confirmColumnMap(){
     if (cxs.length>=10) targetCycles = Math.max.apply(null, cxs);
   }
 
+  var loadCol = columns.filter(function(c){return c._numeric && /load(ing)?$/i.test(c.label.trim());})[0];
+  var unloadCol = columns.filter(function(c){return c._numeric && /unload(ing)?$/i.test(c.label.trim());})[0];
+  var hysteresisPair = (loadCol && unloadCol) ? {loadKey:loadCol.key, unloadKey:unloadCol.key} : null;
+
   DATASETS.custom = {
     filename: filename,
     sheet: 'Sheet1',
@@ -1590,6 +1608,7 @@ function confirmColumnMap(){
     defaultY: yKeys,
     holdPhase: holdPhase, pressureKey: pressureCol ? pressureCol.key : null,
     targetCycles: targetCycles,
+    hysteresisPair: hysteresisPair,
     gen: function(){ return parsed.rows; }
   };
   document.getElementById('columnMapModal').classList.remove('on');
@@ -1651,8 +1670,11 @@ function initWorkspace(key){
   document.getElementById('holdCheckResult').innerHTML = '';
   document.getElementById('fatigueThreshold').value = '';
   document.getElementById('fatigueLifeResult').innerHTML = '';
-  state._holdCheck = null; state._fatigueLife = null; state._qaVerdict = null;
-  ['qaVerdictPanel','specCompliancePanel','capabilityPanel','safetyFactorPanel','holdCheckPanel','fatigueLifePanel'].forEach(function(id){ setPanelStatus(id, null); });
+  document.getElementById('linearityThreshold').value = '0.98';
+  document.getElementById('hysteresisThreshold').value = '';
+  document.getElementById('springCheckResult').innerHTML = '';
+  state._holdCheck = null; state._fatigueLife = null; state._qaVerdict = null; state._springCheck = null;
+  ['qaVerdictPanel','specCompliancePanel','capabilityPanel','safetyFactorPanel','holdCheckPanel','fatigueLifePanel','springCheckPanel'].forEach(function(id){ setPanelStatus(id, null); });
   document.getElementById('spectroBox').style.display = 'none';
   document.getElementById('waterfallBox').style.display = 'none';
 
@@ -1817,6 +1839,7 @@ function onControlsChange(skipCtrlRead){
   renderSafetyFactor();
   renderHoldCheck();
   renderFatigueLife();
+  renderSpringCheck();
   renderQaVerdict();
   renderCorrelationMatrix();
   drawSPCChart();
@@ -2400,6 +2423,66 @@ function renderFatigueLife(){
   setPanelStatus('fatigueLifePanel', badgeCls);
 }
 
+function renderSpringCheck(){
+  var panel = document.getElementById('springCheckPanel');
+  if (!panel) return;
+  var cfg = state.cfg;
+  if (!cfg.hysteresisPair){ panel.style.display='none'; state._springCheck=null; setPanelStatus('springCheckPanel', null); return; }
+  panel.style.display='';
+  var hp = cfg.hysteresisPair;
+  var rows = (state.filtered.length ? state.filtered : state.rows).filter(function(r){
+    return typeof r[state.xKey]==='number' && typeof r[hp.loadKey]==='number' && typeof r[hp.unloadKey]==='number';
+  }).sort(function(a,b){return a[state.xKey]-b[state.xKey];});
+  var el = document.getElementById('springCheckResult');
+  if (rows.length<5){
+    el.innerHTML = '<p class="muted" style="font-size:.82rem">Not enough paired load/unload data to evaluate.</p>';
+    state._springCheck = null; setPanelStatus('springCheckPanel', null); return;
+  }
+
+  var loadPts = rows.map(function(r){return {x:r[state.xKey], y:r[hp.loadKey]};});
+  var fit = computeFit(loadPts, 'linear');
+  var r2 = fit ? fit.r2 : null;
+
+  var work = 0;
+  for (var i=1;i<rows.length;i++){
+    var dx = rows[i][state.xKey]-rows[i-1][state.xKey];
+    var gap0 = rows[i-1][hp.loadKey]-rows[i-1][hp.unloadKey];
+    var gap1 = rows[i][hp.loadKey]-rows[i][hp.unloadKey];
+    work += dx*(gap0+gap1)/2;
+  }
+  work = Math.abs(work);
+
+  var linThrRaw = document.getElementById('linearityThreshold').value;
+  var linThr = linThrRaw!=='' ? parseFloat(linThrRaw) : null;
+  var hystThrRaw = document.getElementById('hysteresisThreshold').value;
+  var hystThr = hystThrRaw!=='' ? parseFloat(hystThrRaw) : null;
+
+  var parts = [];
+  if (r2!==null) parts.push('Loading curve linearity R² = <b>'+r2.toFixed(4)+'</b>'+(linThr!==null?' (min '+linThr+')':''));
+  parts.push('Hysteresis work = <b>'+work.toFixed(1)+' N·mm</b>'+(hystThr!==null?' (max '+hystThr+')':''));
+
+  if (linThr===null && hystThr===null){
+    setPanelStatus('springCheckPanel', null);
+    state._springCheck = null;
+    el.innerHTML = '<span class="badge pass" style="opacity:.55">MEASURED</span><span class="detail">'+parts.join(' — ')+' — enter a threshold above for a pass/fail read.</span>';
+    return;
+  }
+
+  var linFail = linThr!==null && r2!==null && r2<linThr;
+  var hystFail = hystThr!==null && work>hystThr;
+  var linWarn = linFail && r2 >= linThr-0.02;
+  var hystWarn = hystFail && work <= hystThr*1.15;
+  var cls;
+  if (!linFail && !hystFail) cls='pass';
+  else if ((!linFail || linWarn) && (!hystFail || hystWarn)) cls='warn';
+  else cls='fail';
+
+  setPanelStatus('springCheckPanel', cls);
+  state._springCheck = {status: cls};
+  var badgeText = cls==='pass' ? '✓ PASS' : (cls==='warn' ? '⚠ BORDERLINE' : '✕ FAIL');
+  el.innerHTML = '<span class="badge '+cls+'">'+badgeText+'</span><span class="detail">'+parts.join(' — ')+'.</span>';
+}
+
 function renderQaVerdict(){
   var panel = document.getElementById('qaVerdictBanner');
   if (!panel) return;
@@ -2418,6 +2501,7 @@ function renderQaVerdict(){
 
   if (state._holdCheck) checks.push({label:'Hold-phase leak check', status: state._holdCheck.status});
   if (state._fatigueLife) checks.push({label:'Fatigue life projection', status: state._fatigueLife.status});
+  if (state._springCheck) checks.push({label:'Spring linearity & hysteresis', status: state._springCheck.status});
 
   if (!checks.length){
     panel.innerHTML = '<p class="muted" style="font-size:.82rem">Enter spec limits, an allowable, or a threshold '+
@@ -2466,7 +2550,7 @@ function toggleSeries(k){
   if (state.showSpectrogram) drawSpectrogram();
   if (state.showWaterfall) drawWaterfall();
   renderLegend(); renderStats(); renderFitInfo(); renderOutlierNote(); renderXcorrNote(); renderSpecCompliance(); renderForecast();
-  renderProcessCapability(); renderSafetyFactor(); renderHoldCheck(); renderFatigueLife(); renderQaVerdict();
+  renderProcessCapability(); renderSafetyFactor(); renderHoldCheck(); renderFatigueLife(); renderSpringCheck(); renderQaVerdict();
   renderCorrelationMatrix(); drawSPCChart(); renderRainflow();
 }
 
@@ -2693,6 +2777,21 @@ function drawChart(){
       ctx.fillRect(x0, Math.min(y0,y1), w, Math.abs(y1-y0));
     });
   } else {
+    if (state.cfg.hysteresisPair){
+      var hp2 = state.cfg.hysteresisPair;
+      var loadS = series.filter(function(s){return s.key===hp2.loadKey;})[0];
+      var unloadS = series.filter(function(s){return s.key===hp2.unloadKey;})[0];
+      if (loadS && unloadS && loadS.data.length>1 && unloadS.data.length>1){
+        ctx.save();
+        ctx.beginPath();
+        loadS.data.forEach(function(d,i){ var xp=px(d.x), yp=py(valOf(loadS,d)); if(i===0) ctx.moveTo(xp,yp); else ctx.lineTo(xp,yp); });
+        for (var ui=unloadS.data.length-1; ui>=0; ui--){ var d2=unloadS.data[ui]; ctx.lineTo(px(d2.x), py(valOf(unloadS,d2))); }
+        ctx.closePath();
+        ctx.fillStyle = colors['cmp']; ctx.globalAlpha = 0.14;
+        ctx.fill();
+        ctx.restore();
+      }
+    }
     series.forEach(function(s){
       if (state.chartType==='scatter'){
         ctx.fillStyle = s.color;
@@ -3244,6 +3343,10 @@ function openReport(){
   var fatigueText = document.getElementById('fatigueLifeResult') ? document.getElementById('fatigueLifeResult').innerHTML : '';
   if (state._fatigueLife && fatigueText) fatigueHtml = '<div class="rsectitle">Fatigue life projection</div><p class="rsummary">'+fatigueText+'</p>';
 
+  var springHtml = '';
+  var springText = document.getElementById('springCheckResult') ? document.getElementById('springCheckResult').innerHTML : '';
+  if (state._springCheck && springText) springHtml = '<div class="rsectitle">Spring linearity & hysteresis check</div><p class="rsummary">'+springText+'</p>';
+
   var fitHtml = '';
   if (state.fitType!=='none'){
     var fitText = document.getElementById('fitInfo').innerHTML;
@@ -3278,7 +3381,7 @@ function openReport(){
       '<div class="rsectitle">Summary statistics</div>'+
       '<table class="rtable"><thead><tr><th>Variable</th><th class="num">Max</th><th class="num">Min</th>'+
         '<th class="num">Average</th><th class="num">Std Dev</th></tr></thead><tbody>'+statsRows+'</tbody></table>'+
-      specHtml + holdHtml + fatigueHtml + fitHtml + cmpHtml +
+      specHtml + holdHtml + fatigueHtml + springHtml + fitHtml + cmpHtml +
       '<div class="rsectitle">Analysis summary</div>'+
       '<p class="rsummary">'+autoSummary+'</p>'+
       '<div class="rsectitle">Additional notes</div>'+
