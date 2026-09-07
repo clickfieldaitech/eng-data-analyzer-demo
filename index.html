@@ -417,6 +417,14 @@
       </div>
       <div class="metarow" id="wsMeta"></div>
 
+      <section class="panel" id="qaVerdictPanel">
+        <div class="panelhead"><h2>Overall QA verdict</h2></div>
+        <p class="muted" style="font-size:.78rem;max-width:60ch">Rolls up spec limits, process capability,
+          safety factor, hold-phase leak check, and fatigue life projection into one pass/fail read for this
+          part — fill in the checks below to build it.</p>
+        <div id="qaVerdictBanner" style="margin-top:12px"></div>
+      </section>
+
       <section class="panel">
         <div class="panelhead"><h2>Data preview</h2><span class="muted" style="font-size:.78rem">first 15 rows</span></div>
         <div class="tblwrap"><table id="previewTable"></table></div>
@@ -519,6 +527,18 @@
         <p class="fitinfo" id="forecastInfo" style="margin-top:10px"></p>
       </section>
 
+      <section class="panel" id="holdCheckPanel" style="display:none">
+        <div class="panelhead"><h2>Hold-phase pressure check (leak indicator)</h2></div>
+        <p class="muted" style="font-size:.78rem;max-width:56ch">Compares pressure at the start and end of the
+          hold phase only — a real leak shows up as decay while pressure should be steady, not during ramp-up
+          or controlled release.</p>
+        <div class="filterrow" style="margin-top:10px">
+          <div class="field"><label>Max allowed decay (%)</label>
+            <input class="numinput" type="number" id="holdThreshold" step="any" value="2" oninput="renderHoldCheck(); renderQaVerdict();"></div>
+        </div>
+        <div class="specresult" id="holdCheckResult" style="margin-top:10px"></div>
+      </section>
+
       <section class="panel">
         <div class="panelhead"><h2>Process capability (Cp / Cpk)</h2></div>
         <p class="muted" style="font-size:.78rem;max-width:56ch">Uses the same spec limits above. Cp measures
@@ -543,6 +563,18 @@
           into a proper cycle count for fatigue-life calculations, instead of just reading peak-to-peak.</p>
         <div class="tblwrap" id="rainflowWrap" style="margin-top:12px"></div>
         <p class="fitinfo" id="rainflowNote" style="margin-top:10px"></p>
+      </section>
+
+      <section class="panel" id="fatigueLifePanel" style="display:none">
+        <div class="panelhead"><h2>Fatigue life projection</h2></div>
+        <p class="muted" style="font-size:.78rem;max-width:56ch">Fits a linear trend to the primary variable
+          across cycles and projects when it will cross an end-of-life threshold, compared against the target
+          cycle count for this part.</p>
+        <div class="filterrow" style="margin-top:10px">
+          <div class="field"><label>End-of-life threshold</label>
+            <input class="numinput" type="number" id="fatigueThreshold" step="any" oninput="renderFatigueLife(); renderQaVerdict();"></div>
+        </div>
+        <div class="specresult" id="fatigueLifeResult" style="margin-top:10px"></div>
       </section>
 
       <section class="panel">
@@ -913,6 +945,7 @@ var DATASETS = {
     filename: 'Bellows_Hydro_Test_04.xlsx',
     sheet: 'HydroTest_Log',
     compareGroup: 'hydro',
+    holdPhase: {from:30, to:90}, pressureKey: 'Pressure_bar',
     meta: {Bellows_Model:'MB-EJ-3200', Material:'SS316L', Nominal_Bore:'300 mm', Convolutions:'8',
       Wall_Thickness:'1.2 mm', Batch:'B-2026-04', Engineer:'R. Sundaram', Standard:'EJMA 10th Ed.',
       Cal_Cert:'CAL-2026-0231'},
@@ -947,6 +980,7 @@ var DATASETS = {
     filename: 'Bellows_Hydro_Test_09.xlsx',
     sheet: 'HydroTest_Log',
     compareGroup: 'hydro',
+    holdPhase: {from:30, to:90}, pressureKey: 'Pressure_bar',
     meta: {Bellows_Model:'MB-EJ-3200', Material:'SS316L', Nominal_Bore:'300 mm', Convolutions:'8',
       Wall_Thickness:'1.3 mm', Batch:'B-2026-09', Engineer:'S. Iyer', Standard:'EJMA 10th Ed.',
       Cal_Cert:'CAL-2026-0255'},
@@ -980,6 +1014,7 @@ var DATASETS = {
     filename: 'Bellows_Fatigue_Test_11.xlsx',
     sheet: 'FatigueLog_Summary',
     compareGroup: 'fatigue',
+    targetCycles: 10000,
     meta: {Bellows_Model:'MB-EJ-2600', Material:'SS321', Nominal_Bore:'250 mm', Convolutions:'6',
       Batch:'B-2026-07', Engineer:'V. Karthik', Standard:'EJMA 10th Ed. §4.2', Cal_Cert:'CAL-2026-0198',
       Target_Cycles:'10,000'},
@@ -1012,6 +1047,7 @@ var DATASETS = {
     filename: 'Bellows_Fatigue_Test_15.xlsx',
     sheet: 'FatigueLog_Summary',
     compareGroup: 'fatigue',
+    targetCycles: 10000,
     meta: {Bellows_Model:'MB-EJ-2600', Material:'SS321', Nominal_Bore:'250 mm', Convolutions:'6',
       Batch:'B-2026-15', Engineer:'R. Sundaram', Standard:'EJMA 10th Ed. §4.2', Cal_Cert:'CAL-2026-0271',
       Target_Cycles:'10,000'},
@@ -1563,6 +1599,11 @@ function initWorkspace(key){
   document.getElementById('interpResult').innerHTML = '';
   document.getElementById('allowableLimit').value = '';
   document.getElementById('safetyResult').innerHTML = '';
+  document.getElementById('holdThreshold').value = '2';
+  document.getElementById('holdCheckResult').innerHTML = '';
+  document.getElementById('fatigueThreshold').value = '';
+  document.getElementById('fatigueLifeResult').innerHTML = '';
+  state._holdCheck = null; state._fatigueLife = null; state._qaVerdict = null;
   document.getElementById('spectroBox').style.display = 'none';
   document.getElementById('waterfallBox').style.display = 'none';
 
@@ -1725,6 +1766,9 @@ function onControlsChange(skipCtrlRead){
   renderForecast();
   renderProcessCapability();
   renderSafetyFactor();
+  renderHoldCheck();
+  renderFatigueLife();
+  renderQaVerdict();
   renderCorrelationMatrix();
   drawSPCChart();
   renderRainflow();
@@ -2142,6 +2186,132 @@ function renderSafetyFactor(){
     ' — safety factor = <b>'+sf.toFixed(2)+'×</b>'+(sf<1?' (already beyond the allowable limit).':'.')+'</span>';
 }
 
+function renderHoldCheck(){
+  var panel = document.getElementById('holdCheckPanel');
+  if (!panel) return;
+  var cfg = state.cfg;
+  if (!cfg.holdPhase || !cfg.pressureKey){ panel.style.display='none'; state._holdCheck=null; return; }
+  panel.style.display='';
+  var hp = cfg.holdPhase;
+  var holdRows = state.rows.filter(function(r){
+    return r[state.xKey]>=hp.from && r[state.xKey]<=hp.to && typeof r[cfg.pressureKey]==='number';
+  }).sort(function(a,b){return a[state.xKey]-b[state.xKey];});
+  var el = document.getElementById('holdCheckResult');
+  var xUnit = colFor(state.xKey).unit || '';
+  if (holdRows.length<4){
+    el.innerHTML = '<p class="muted" style="font-size:.82rem">Not enough data points in the hold window ('+
+      hp.from+'–'+hp.to+' '+xUnit+') to evaluate.</p>';
+    state._holdCheck = null; return;
+  }
+  var startVal = holdRows[0][cfg.pressureKey], endVal = holdRows[holdRows.length-1][cfg.pressureKey];
+  var duration = holdRows[holdRows.length-1][state.xKey] - holdRows[0][state.xKey];
+  var decayPct = startVal!==0 ? (startVal-endVal)/startVal*100 : 0;
+  var thrRaw = document.getElementById('holdThreshold').value;
+  var thr = thrRaw!=='' ? parseFloat(thrRaw) : 2;
+  var pass = decayPct <= thr;
+  var col = colFor(cfg.pressureKey);
+  var d = col.decimals!=null ? col.decimals : 2;
+  var cls = pass ? 'pass' : (decayPct <= thr*1.5 ? 'warn' : 'fail');
+  state._holdCheck = {status: cls};
+  el.innerHTML = '<span class="badge '+cls+'">'+(pass?'✓ HOLD PASS':'✕ HOLD FAIL')+'</span>'+
+    '<span class="detail">'+col.label+' held '+startVal.toFixed(d)+' → '+endVal.toFixed(d)+' '+(col.unit||'')+
+    ' over '+duration.toFixed(1)+' '+xUnit+' ('+decayPct.toFixed(2)+'% decay) — threshold '+thr+'%. '+
+    (pass ? 'No significant leak indicated.' : 'Decay exceeds threshold — possible leak, check joints/seals before release.')+
+    '</span>';
+}
+
+function renderFatigueLife(){
+  var panel = document.getElementById('fatigueLifePanel');
+  if (!panel) return;
+  var cfg = state.cfg;
+  if (!cfg.targetCycles){ panel.style.display='none'; state._fatigueLife=null; return; }
+  panel.style.display='';
+  var el = document.getElementById('fatigueLifeResult');
+  var prim = primarySeries();
+  if (!prim || prim.pts.length<5){
+    el.innerHTML = '<p class="muted" style="font-size:.82rem">Not enough data to project a trend.</p>';
+    state._fatigueLife = null; return;
+  }
+  var thrRaw = document.getElementById('fatigueThreshold').value;
+  var d = prim.col.decimals!=null ? prim.col.decimals : 2;
+  if (thrRaw===''){
+    el.innerHTML = '<p class="muted" style="font-size:.82rem">Enter an end-of-life threshold for '+
+      prim.col.label+' to project remaining life.</p>';
+    state._fatigueLife = null; return;
+  }
+  var thr = parseFloat(thrRaw);
+  var fit = computeFit(prim.pts, 'linear');
+  if (!fit){ el.innerHTML=''; state._fatigueLife=null; return; }
+  var xs = prim.pts.map(function(p){return p.x;});
+  var xMax = Math.max.apply(null, xs), xMin = Math.min.apply(null, xs);
+  var declining = fit.fn(xMax) < fit.fn(xMin);
+  var lower = declining ? thr : null, upper = declining ? null : thr;
+  var crossing = null;
+  var scanSteps = 400, scanStep = (xMax-xMin)/scanSteps;
+  for (var sx=xMin; sx<=xMax; sx+=scanStep){
+    var sy = fit.fn(sx);
+    if ((lower!==null && sy<lower) || (upper!==null && sy>upper)){ crossing = sx; break; }
+  }
+  if (crossing===null) crossing = computeCrossingPoint(fit.fn, xMax, lower, upper, xMin, xMax);
+  var target = cfg.targetCycles;
+  var badgeCls, badgeText, detail;
+  if (crossing==null){
+    badgeCls='pass'; badgeText='✓ NO DEGRADATION TREND TO LIMIT';
+    detail = prim.col.label+' is not trending toward the '+thr.toFixed(d)+' '+(prim.col.unit||'')+
+      ' threshold within a reasonable projection.';
+  } else if (crossing >= target){
+    var margin = crossing - target;
+    badgeCls='pass'; badgeText='✓ PROJECTED TO REACH TARGET LIFE';
+    detail = 'Linear trend projects '+prim.col.label+' crossing '+thr.toFixed(d)+' '+(prim.col.unit||'')+
+      ' at ≈ <b>'+Math.round(crossing).toLocaleString()+' cycles</b> — '+Math.round(margin).toLocaleString()+
+      ' cycles beyond the '+target.toLocaleString()+'-cycle target.';
+  } else {
+    var shortfall = target - crossing;
+    badgeCls='fail'; badgeText='✕ PROJECTED TO FAIL BEFORE TARGET LIFE';
+    detail = 'Linear trend projects '+prim.col.label+' crossing '+thr.toFixed(d)+' '+(prim.col.unit||'')+
+      ' at ≈ <b>'+Math.round(crossing).toLocaleString()+' cycles</b> — about '+Math.round(shortfall).toLocaleString()+
+      ' cycles short of the '+target.toLocaleString()+'-cycle target.';
+  }
+  state._fatigueLife = {status: badgeCls, crossing: crossing, target: target};
+  el.innerHTML = '<span class="badge '+badgeCls+'">'+badgeText+'</span><span class="detail">'+detail+'</span>';
+}
+
+function renderQaVerdict(){
+  var panel = document.getElementById('qaVerdictBanner');
+  if (!panel) return;
+  var checks = [];
+  var specHtml = document.getElementById('specResult').innerHTML;
+  if (specHtml) checks.push({label:'Spec limits', status: specHtml.indexOf('badge pass')>=0 ? 'pass' : 'fail'});
+
+  var capGrid = document.getElementById('capabilityGrid');
+  var cpEl = capGrid ? capGrid.querySelector('.status-ok,.status-warn,.status-crit') : null;
+  if (cpEl) checks.push({label:'Process capability (Cpk)',
+    status: cpEl.classList.contains('status-ok') ? 'pass' : (cpEl.classList.contains('status-warn') ? 'warn' : 'fail')});
+
+  var sfHtml = document.getElementById('safetyResult').innerHTML;
+  if (sfHtml) checks.push({label:'Safety factor',
+    status: sfHtml.indexOf('badge pass')>=0 ? 'pass' : (sfHtml.indexOf('badge warn')>=0 ? 'warn' : 'fail')});
+
+  if (state._holdCheck) checks.push({label:'Hold-phase leak check', status: state._holdCheck.status});
+  if (state._fatigueLife) checks.push({label:'Fatigue life projection', status: state._fatigueLife.status});
+
+  if (!checks.length){
+    panel.innerHTML = '<p class="muted" style="font-size:.82rem">Enter spec limits, an allowable, or a threshold '+
+      'in the checks below to build an overall verdict.</p>';
+    state._qaVerdict = null;
+    return;
+  }
+  var worst = checks.some(function(c){return c.status==='fail';}) ? 'fail'
+    : (checks.some(function(c){return c.status==='warn';}) ? 'warn' : 'pass');
+  var overallText = worst==='pass' ? '✓ ALL CHECKS PASS' : (worst==='warn' ? '⚠ REVIEW RECOMMENDED' : '✕ FAILS QA');
+  state._qaVerdict = {status: worst, checks: checks};
+  panel.innerHTML = '<span class="badge '+worst+'" style="font-size:.9rem;padding:8px 16px">'+overallText+'</span>'+
+    '<div class="metarow" style="margin-top:10px">'+checks.map(function(c){
+      var icon = c.status==='pass' ? '✓' : (c.status==='warn' ? '⚠' : '✕');
+      return '<span class="metachip">'+icon+' '+c.label+'</span>';
+    }).join('')+'</div>';
+}
+
 function uniqueUnits(){
   var u = {};
   state.yKeys.forEach(function(k){ var c = colFor(k); u[c.unit||''] = true; });
@@ -2170,7 +2340,8 @@ function toggleSeries(k){
   if (state.showSpectrogram) drawSpectrogram();
   if (state.showWaterfall) drawWaterfall();
   renderLegend(); renderStats(); renderFitInfo(); renderOutlierNote(); renderXcorrNote(); renderSpecCompliance(); renderForecast();
-  renderProcessCapability(); renderSafetyFactor(); renderCorrelationMatrix(); drawSPCChart(); renderRainflow();
+  renderProcessCapability(); renderSafetyFactor(); renderHoldCheck(); renderFatigueLife(); renderQaVerdict();
+  renderCorrelationMatrix(); drawSPCChart(); renderRainflow();
 }
 
 function percentileOf(sortedVals, p){
@@ -2884,6 +3055,24 @@ function openReport(){
   if (specResultText) specHtml = '<div class="rsectitle">Spec compliance</div><p class="rsummary">'+specResultText+
     (forecastText ? '<br><br>'+forecastText : '')+'</p>';
 
+  var verdictHtml = '';
+  if (state._qaVerdict){
+    var vBadge = state._qaVerdict.status==='pass' ? '✓ ALL CHECKS PASS' : (state._qaVerdict.status==='warn' ? '⚠ REVIEW RECOMMENDED' : '✕ FAILS QA');
+    var vList = state._qaVerdict.checks.map(function(c){
+      var icon = c.status==='pass' ? '✓' : (c.status==='warn' ? '⚠' : '✕');
+      return icon+' '+c.label;
+    }).join(' · ');
+    verdictHtml = '<div class="rsectitle">Overall QA verdict</div><p class="rsummary"><b>'+vBadge+'</b><br>'+vList+'</p>';
+  }
+
+  var holdHtml = '';
+  var holdText = document.getElementById('holdCheckResult') ? document.getElementById('holdCheckResult').innerHTML : '';
+  if (state._holdCheck && holdText) holdHtml = '<div class="rsectitle">Hold-phase pressure check</div><p class="rsummary">'+holdText+'</p>';
+
+  var fatigueHtml = '';
+  var fatigueText = document.getElementById('fatigueLifeResult') ? document.getElementById('fatigueLifeResult').innerHTML : '';
+  if (state._fatigueLife && fatigueText) fatigueHtml = '<div class="rsectitle">Fatigue life projection</div><p class="rsummary">'+fatigueText+'</p>';
+
   var fitHtml = '';
   if (state.fitType!=='none'){
     var fitText = document.getElementById('fitInfo').innerHTML;
@@ -2913,11 +3102,12 @@ function openReport(){
         '<div class="rid">'+reportNo+'<br>'+now.toLocaleDateString()+'</div>'+
       '</div>'+
       '<div class="rmetagrid">'+metaHtml+'</div>'+
+      verdictHtml +
       '<div class="rsectitle">Chart</div>'+chartImg+
       '<div class="rsectitle">Summary statistics</div>'+
       '<table class="rtable"><thead><tr><th>Variable</th><th class="num">Max</th><th class="num">Min</th>'+
         '<th class="num">Average</th><th class="num">Std Dev</th></tr></thead><tbody>'+statsRows+'</tbody></table>'+
-      specHtml + fitHtml + cmpHtml +
+      specHtml + holdHtml + fatigueHtml + fitHtml + cmpHtml +
       '<div class="rsectitle">Analysis summary</div>'+
       '<p class="rsummary">'+autoSummary+'</p>'+
       '<div class="rsectitle">Additional notes</div>'+
