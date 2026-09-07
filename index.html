@@ -1,5 +1,12 @@
 <meta charset="utf-8">
 <title>MB Engineering Data Analyzer — Demo</title>
+<script>
+(function(){
+  var saved = null;
+  try { saved = localStorage.getItem('mbTheme'); } catch(e){}
+  document.documentElement.setAttribute('data-theme', saved==='dark' ? 'dark' : 'light');
+})();
+</script>
 <style>
   .viz-root{
     --surface-1:#fcfcfb; --page:#f9f9f7; --panel:#ffffff;
@@ -317,7 +324,7 @@
 </style>
 
 <div class="viz-root">
-  <button class="theme" style="position:fixed;top:14px;right:14px;z-index:9" onclick="var r=document.documentElement,d=r.getAttribute('data-theme')==='dark';r.setAttribute('data-theme',d?'light':'dark')">◐ theme</button>
+  <button class="theme" style="position:fixed;top:14px;right:14px;z-index:9" onclick="var r=document.documentElement,d=r.getAttribute('data-theme')==='dark',next=d?'light':'dark';r.setAttribute('data-theme',next);try{localStorage.setItem('mbTheme',next);}catch(e){}">◐ theme</button>
 
   <div class="topbar">
     <span class="brandmark"></span>
