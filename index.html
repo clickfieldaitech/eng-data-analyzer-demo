@@ -109,16 +109,18 @@
   .metachip{font-size:.7rem;font-family:ui-monospace,monospace;background:var(--surface-1);
     border:1px solid var(--border);border-radius:6px;padding:3px 8px;color:var(--ink-2)}
 
-  section.panel{margin-top:18px;background:var(--panel);border:1px solid var(--border);border-left:4px solid var(--border);
-    border-radius:12px;padding:18px 20px;transition:border-left-color .15s}
-  section.panel.status-pass{border-left-color:var(--good)}
-  section.panel.status-warn{border-left-color:var(--warn)}
-  section.panel.status-fail{border-left-color:var(--critical)}
+  section.panel{margin-top:18px;background:var(--panel);border:1px solid var(--border);
+    border-radius:12px;padding:18px 20px;transition:box-shadow .15s,border-color .15s}
+  section.panel.statuscard{border-left:4px solid var(--border);transition:border-left-color .15s,box-shadow .15s,background-color .15s}
+  section.panel.statuscard.status-pass{border-left-color:var(--good)}
+  section.panel.statuscard.status-warn{border-left-color:var(--warn)}
+  section.panel.statuscard.status-fail{border-left-color:var(--critical)}
   .panelhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
-  #qaVerdictPanel{transition:background-color .15s}
+  #qaVerdictPanel{position:sticky;top:14px;z-index:8;box-shadow:0 4px 18px rgba(0,0,0,.08);transition:background-color .15s,box-shadow .15s}
   #qaVerdictPanel.status-pass{background:var(--good-bg)}
   #qaVerdictPanel.status-warn{background:var(--warn-bg)}
   #qaVerdictPanel.status-fail{background:var(--crit-bg)}
+  @media(max-width:760px){ #qaVerdictPanel{position:static} }
 
   /* preview table */
   .tblwrap{overflow-x:auto;border:1px solid var(--border);border-radius:8px;max-height:260px;overflow-y:auto}
@@ -524,7 +526,7 @@
         <div class="tblwrap" id="corrMatrixWrap" style="margin-top:12px"></div>
       </section>
 
-      <section class="panel" id="specCompliancePanel">
+      <section class="panel statuscard" id="specCompliancePanel">
         <div class="panelhead"><h2>Spec compliance</h2></div>
         <div class="speclimits">
           <div class="field"><label>Lower limit</label><input class="numinput" type="number" id="specLower" step="any" oninput="onControlsChange(true)"></div>
@@ -536,7 +538,7 @@
         <p class="fitinfo" id="forecastInfo" style="margin-top:10px"></p>
       </section>
 
-      <section class="panel" id="holdCheckPanel" style="display:none">
+      <section class="panel statuscard" id="holdCheckPanel" style="display:none">
         <div class="panelhead"><h2>Hold-phase pressure check (leak indicator)</h2></div>
         <p class="muted" style="font-size:.78rem;max-width:56ch">Compares pressure at the start and end of the
           hold phase only — a real leak shows up as decay while pressure should be steady, not during ramp-up
@@ -548,7 +550,7 @@
         <div class="specresult" id="holdCheckResult" style="margin-top:10px"></div>
       </section>
 
-      <section class="panel" id="capabilityPanel">
+      <section class="panel statuscard" id="capabilityPanel">
         <div class="panelhead"><h2>Process capability (Cp / Cpk)</h2></div>
         <p class="muted" style="font-size:.78rem;max-width:56ch">Uses the same spec limits above. Cp measures
           whether the process spread could fit inside spec if centered; Cpk accounts for how off-center it
@@ -577,7 +579,7 @@
         <p class="fitinfo" id="rainflowNote" style="margin-top:10px"></p>
       </section>
 
-      <section class="panel" id="fatigueLifePanel" style="display:none">
+      <section class="panel statuscard" id="fatigueLifePanel" style="display:none">
         <div class="panelhead"><h2>Fatigue life projection</h2></div>
         <p class="muted" style="font-size:.78rem;max-width:56ch">Fits a linear trend to the primary variable
           across cycles and projects when it will cross an end-of-life threshold, compared against the target
@@ -600,7 +602,7 @@
         <div class="specresult" id="interpResult" style="margin-top:10px"></div>
       </section>
 
-      <section class="panel" id="safetyFactorPanel">
+      <section class="panel statuscard" id="safetyFactorPanel">
         <div class="panelhead"><h2>Safety factor</h2></div>
         <p class="muted" style="font-size:.78rem;max-width:56ch">Compares the worst observed reading on the
           primary variable against a material/design allowable you enter — the margin before failure.</p>
