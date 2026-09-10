@@ -319,8 +319,8 @@
   .simslider{margin-bottom:4px}
   .simslider label{display:flex;justify-content:space-between;font-size:.8rem;color:var(--ink-2)}
   .simslider label b{color:var(--ink-1);font-family:ui-monospace,monospace}
-  #simChart, #simSpringChart{height:260px}
-  #simDiagramHydro, #simDiagramSpring{height:280px}
+  #simChart, #simSpringChart, #simFatigueChart{height:260px}
+  #simDiagramHydro, #simDiagramSpring, #simDiagramFatigue{height:280px}
 </style>
 
 <div class="viz-root">
@@ -777,6 +777,7 @@
       <div class="batchactions">
         <button class="uploadbtn simtoggle active" id="simTabHydro" onclick="setSimMode('hydro')">Hydrostatic Pressure</button>
         <button class="uploadbtn simtoggle" id="simTabSpring" onclick="setSimMode('spring')">Spring Rate</button>
+        <button class="uploadbtn simtoggle" id="simTabFatigue" onclick="setSimMode('fatigue')">Cyclic Fatigue</button>
       </div>
 
       <div id="simHydro">
@@ -916,6 +917,76 @@
           <div class="panelhead"><h2>Force vs displacement — at this convolution count</h2></div>
           <div class="chartbox"><canvas id="simSpringChart"></canvas></div>
           <p class="muted" style="font-size:.76rem;margin-top:10px">Dashed line = force limit, if set. Marker = current target displacement.</p>
+        </section>
+      </div>
+
+      <div id="simFatigue" style="display:none">
+        <section class="panel" style="margin-top:18px">
+          <div class="panelhead"><h2>Inputs</h2></div>
+          <div class="cmp2grid">
+            <div>
+              <div class="simslider"><label>Pressure amplitude <b id="simFPVal">22.0 bar</b></label>
+                <input type="range" id="simFatiguePressure" min="0" max="30" step="0.5" value="22" oninput="updateSimFatigue()"></div>
+              <div class="simslider"><label>Wall thickness <b id="simFTVal">1.20 mm</b></label>
+                <input type="range" id="simFatigueThickness" min="0.8" max="2.0" step="0.02" value="1.2" oninput="updateSimFatigue()"></div>
+              <div class="simslider"><label>Bore diameter <b id="simFBVal">250 mm</b></label>
+                <input type="range" id="simFatigueBore" min="150" max="500" step="10" value="250" oninput="updateSimFatigue()"></div>
+              <div class="simslider"><label>Convolutions <b id="simFatigueCVal">6</b></label>
+                <input type="range" id="simFatigueConvolutions" min="3" max="10" step="1" value="6" oninput="updateSimFatigue()"></div>
+            </div>
+            <div>
+              <div class="field">
+                <label>Material (sets the fatigue strength curve)</label>
+                <select id="simFatigueMaterial" onchange="updateSimFatigue()">
+                  <option value="SS316L">SS316L</option>
+                  <option value="SS321">SS321</option>
+                  <option value="Inconel625">Inconel 625</option>
+                </select>
+              </div>
+              <div class="field" style="margin-top:12px">
+                <label>Target cycle life</label>
+                <input class="numinput" type="number" id="simFatigueTarget" step="any" value="10000" oninput="updateSimFatigue()">
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" style="margin-top:18px">
+          <div class="panelhead"><h2>Predicted result</h2></div>
+          <div class="statsgrid">
+            <div class="statcard"><div class="shead"><span class="sname">Stress amplitude</span></div>
+              <div class="srow"><span>Predicted</span><b class="num" id="simFStressOut">—</b></div></div>
+            <div class="statcard"><div class="shead"><span class="sname">Cycles to failure</span></div>
+              <div class="srow"><span>Predicted</span><b class="num" id="simFCyclesOut">—</b></div></div>
+            <div class="statcard"><div class="shead"><span class="sname">Est. weight</span></div>
+              <div class="srow"><span>Predicted</span><b class="num" id="simFWeightOut">—</b></div></div>
+            <div class="statcard"><div class="shead"><span class="sname">Est. material cost</span></div>
+              <div class="srow"><span>Predicted</span><b class="num" id="simFCostOut">—</b></div></div>
+          </div>
+          <div class="specresult" id="simFatigueSpecResult" style="margin-top:14px"></div>
+        </section>
+
+        <section class="panel" style="margin-top:18px">
+          <div class="panelhead"><h2>Design optimizer — solve for wall thickness</h2></div>
+          <p class="muted" style="font-size:.84rem;max-width:60ch">Instead of guessing a wall thickness and checking
+            the predicted life, set the target cycle life you need and let it calculate the minimum wall thickness
+            required — at the current pressure amplitude, bore and material.</p>
+          <div class="specresult" id="optFatigueResult" style="margin-top:14px"></div>
+        </section>
+
+        <section class="panel" style="margin-top:18px">
+          <div class="panelhead"><h2>Bellows cross-section — this design</h2></div>
+          <div class="chartbox"><canvas id="simDiagramFatigue"></canvas></div>
+          <p class="muted" style="font-size:.76rem;margin-top:10px">Live technical drawing — bore diameter and
+            wall thickness redraw as you move the sliders. Callout shows predicted cycles to failure at the
+            convolution crest.</p>
+          <div class="actionrow"><button class="actbtn primary" onclick="openDrawingReport('fatigue')">📐 Generate drawing sheet</button></div>
+        </section>
+
+        <section class="panel" style="margin-top:18px">
+          <div class="panelhead"><h2>S-N curve — stress amplitude vs cycles to failure, at this geometry</h2></div>
+          <div class="chartbox"><canvas id="simFatigueChart"></canvas></div>
+          <p class="muted" style="font-size:.76rem;margin-top:10px">Dashed vertical line = target cycle life. Marker = current slider position. X-axis is log-scaled (cycles).</p>
         </section>
       </div>
     </div>
@@ -4020,9 +4091,9 @@ function openBatchReport(){
 /* ---- design simulator ---- */
 var simMode = 'hydro';
 var SIM_MATERIALS = {
-  SS316L: {label:'SS316L', allowable:137, density:8000, pricePerKg:450},
-  SS321: {label:'SS321', allowable:145, density:8000, pricePerKg:480},
-  Inconel625: {label:'Inconel 625', allowable:220, density:8440, pricePerKg:3200}
+  SS316L: {label:'SS316L', allowable:137, density:8000, pricePerKg:450, fatigueK:1.0e14, fatigueM:5},
+  SS321: {label:'SS321', allowable:145, density:8000, pricePerKg:480, fatigueK:1.3e14, fatigueM:5},
+  Inconel625: {label:'Inconel 625', allowable:220, density:8440, pricePerKg:3200, fatigueK:5.0e14, fatigueM:5}
 };
 
 function computeWeightCost(boreMm, wallMm, convolutions, mat){
@@ -4045,6 +4116,7 @@ function openSimScreen(){
   document.getElementById('simScreen').classList.add('on');
   updateSimHydro();
   updateSimSpring();
+  updateSimFatigue();
 }
 function closeSimScreen(){
   document.getElementById('simScreen').classList.remove('on');
@@ -4054,9 +4126,11 @@ function setSimMode(mode){
   simMode = mode;
   document.getElementById('simHydro').style.display = mode==='hydro' ? '' : 'none';
   document.getElementById('simSpring').style.display = mode==='spring' ? '' : 'none';
+  document.getElementById('simFatigue').style.display = mode==='fatigue' ? '' : 'none';
   document.getElementById('simTabHydro').classList.toggle('active', mode==='hydro');
   document.getElementById('simTabSpring').classList.toggle('active', mode==='spring');
-  if (mode==='hydro') updateSimHydro(); else updateSimSpring();
+  document.getElementById('simTabFatigue').classList.toggle('active', mode==='fatigue');
+  if (mode==='hydro') updateSimHydro(); else if (mode==='spring') updateSimSpring(); else updateSimFatigue();
 }
 
 function hydroPredict(pressureBar, wallMm, boreMm){
@@ -4225,6 +4299,126 @@ function applyOptimizedConvolutions(val){
   updateSimSpring();
 }
 
+function fatiguePredict(pressureAmpBar, wallMm, boreMm, mat){
+  var stressAmp = hydroPredict(pressureAmpBar, wallMm, boreMm).stress;
+  var cycles = stressAmp>0 ? mat.fatigueK / Math.pow(stressAmp, mat.fatigueM) : Infinity;
+  return {stressAmp:stressAmp, cycles:cycles};
+}
+
+function updateSimFatigue(){
+  var p = parseFloat(document.getElementById('simFatiguePressure').value);
+  var t = parseFloat(document.getElementById('simFatigueThickness').value);
+  var bore = parseFloat(document.getElementById('simFatigueBore').value);
+  var convolutions = parseInt(document.getElementById('simFatigueConvolutions').value, 10);
+  var matKey = document.getElementById('simFatigueMaterial').value;
+  var mat = SIM_MATERIALS[matKey];
+  var target = parseFloat(document.getElementById('simFatigueTarget').value) || 0;
+  document.getElementById('simFPVal').textContent = p.toFixed(1)+' bar';
+  document.getElementById('simFTVal').textContent = t.toFixed(2)+' mm';
+  document.getElementById('simFBVal').textContent = bore.toFixed(0)+' mm';
+  document.getElementById('simFatigueCVal').textContent = convolutions;
+  var pred = fatiguePredict(p, t, bore, mat);
+  document.getElementById('simFStressOut').textContent = pred.stressAmp.toFixed(1)+' MPa';
+  document.getElementById('simFCyclesOut').textContent = pred.cycles>=1e7 ? '>10M' : Math.round(pred.cycles).toLocaleString();
+  var wc = computeWeightCost(bore, t, convolutions, mat);
+  document.getElementById('simFWeightOut').textContent = wc.weightKg.toFixed(2)+' kg';
+  document.getElementById('simFCostOut').textContent = '₹'+wc.costInr.toLocaleString('en-IN',{maximumFractionDigits:0});
+  var pass = target>0 ? pred.cycles>=target : true;
+  var specEl = document.getElementById('simFatigueSpecResult');
+  if (target>0){
+    var margin = pred.cycles-target;
+    specEl.innerHTML = '<span class="badge '+(pass?'pass':'fail')+'">'+(pass?'✓ MEETS TARGET LIFE':'✕ FAILS BEFORE TARGET LIFE')+'</span>'+
+      '<span class="detail">Target: '+Math.round(target).toLocaleString()+' cycles — margin '+(margin>=0?'+':'')+Math.round(margin).toLocaleString()+' cycles</span>';
+  } else { specEl.innerHTML = ''; }
+  drawSimFatigueChart(p, t, bore, mat, target);
+  drawBellowsFatigueDiagram(t, bore, convolutions, pred.cycles, pass);
+  runFatigueOptimizer();
+}
+
+function runFatigueOptimizer(){
+  var el = document.getElementById('optFatigueResult');
+  if (!el) return;
+  var target = parseFloat(document.getElementById('simFatigueTarget').value);
+  var p = parseFloat(document.getElementById('simFatiguePressure').value);
+  var bore = parseFloat(document.getElementById('simFatigueBore').value);
+  var matKey = document.getElementById('simFatigueMaterial').value;
+  var mat = SIM_MATERIALS[matKey];
+  if (!target || target<=0){ el.innerHTML=''; return; }
+  var targetStress = Math.pow(mat.fatigueK/target, 1/mat.fatigueM);
+  var pMPa = p/10;
+  var requiredWall = pMPa * bore * 0.404 / (2*targetStress);
+  var inRange = requiredWall>=0.8 && requiredWall<=2.0;
+  el.innerHTML = '<span class="badge '+(inRange?'pass':'fail')+'">'+(inRange?'✓ SOLVED':'⚠ OUT OF RANGE')+'</span>'+
+    '<span class="detail">Requires wall thickness ≈ <b>'+requiredWall.toFixed(2)+' mm</b> (stress amplitude ≤ '+targetStress.toFixed(1)+
+    ' MPa) at '+p.toFixed(1)+' bar, '+bore.toFixed(0)+' mm bore to reach '+Math.round(target).toLocaleString()+' cycles'+
+    (inRange?'':' — outside the 0.8–2.0 mm slider range; try a different pressure or bore')+'.</span>'+
+    (inRange ? '<button type="button" class="actbtn" onclick="applyOptimizedFatigueWall('+requiredWall.toFixed(3)+')">Apply to slider →</button>' : '');
+}
+function applyOptimizedFatigueWall(val){
+  document.getElementById('simFatigueThickness').value = Math.max(0.8, Math.min(2.0, val));
+  updateSimFatigue();
+}
+
+function drawSimFatigueChart(curP, wallMm, boreMm, mat, target){
+  var canvas = document.getElementById('simFatigueChart');
+  var box = canvas.parentElement;
+  var cssW = box.clientWidth, cssH = 260;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = cssW*dpr; canvas.height = cssH*dpr;
+  canvas.style.width = cssW+'px'; canvas.style.height = cssH+'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+
+  var css = getComputedStyle(document.querySelector('.viz-root'));
+  var colors = {};
+  ['grid','baseline','ink-muted','ink-1','s3','critical','warn'].forEach(function(v){ colors[v]=css.getPropertyValue('--'+v).trim(); });
+
+  var pts = [];
+  for (var p=0.5; p<=30; p+=0.5){
+    var pr = fatiguePredict(p, wallMm, boreMm, mat);
+    if (pr.cycles>=10 && pr.cycles<=1e8) pts.push({cycles:pr.cycles, stress:pr.stressAmp});
+  }
+  pts.sort(function(a,b){return a.cycles-b.cycles;});
+  var xMin = 1e2, xMax = 1e7;
+  var yMax = Math.max.apply(null, pts.map(function(pt){return pt.stress;}))*1.15 || 1;
+
+  var padL=54, padR=16, padT=14, padB=28;
+  var plotW=cssW-padL-padR, plotH=cssH-padT-padB;
+  function px(cyc){ var c=Math.max(xMin,Math.min(xMax,cyc)); return padL + (Math.log10(c)-Math.log10(xMin))/(Math.log10(xMax)-Math.log10(xMin))*plotW; }
+  function py(y){ return padT + plotH - (y/yMax)*plotH; }
+
+  ctx.strokeStyle=colors['grid']; ctx.lineWidth=1; ctx.font='10px ui-monospace,monospace'; ctx.fillStyle=colors['ink-muted'];
+  for (var i=0;i<=4;i++){
+    var yv=yMax*i/4, yp=py(yv);
+    ctx.beginPath(); ctx.moveTo(padL,yp); ctx.lineTo(cssW-padR,yp); ctx.stroke();
+    ctx.textAlign='right'; ctx.textBaseline='middle'; ctx.fillText(formatTick(yv), padL-6, yp);
+  }
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  for (var e=2; e<=7; e++){ var xv=Math.pow(10,e); ctx.fillText(formatCycles(xv), px(xv), cssH-padB+8); }
+  ctx.strokeStyle=colors['baseline'];
+  ctx.beginPath(); ctx.moveTo(padL,padT+plotH); ctx.lineTo(cssW-padR,padT+plotH); ctx.stroke();
+
+  if (target>0){
+    var txp = px(target);
+    ctx.strokeStyle=colors['warn']; ctx.setLineDash([6,4]); ctx.lineWidth=1.4;
+    ctx.beginPath(); ctx.moveTo(txp,padT); ctx.lineTo(txp,padT+plotH); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle=colors['warn']; ctx.font='9px ui-monospace,monospace'; ctx.textAlign='left'; ctx.textBaseline='top';
+    ctx.fillText('target life', txp+4, padT+2);
+  }
+
+  ctx.strokeStyle=colors['s3']; ctx.lineWidth=2; ctx.beginPath();
+  pts.forEach(function(pt,idx){ var xp=px(pt.cycles), yp=py(pt.stress); if(idx===0) ctx.moveTo(xp,yp); else ctx.lineTo(xp,yp); });
+  ctx.stroke();
+
+  var curPred = fatiguePredict(curP, wallMm, boreMm, mat);
+  var mxp=px(curPred.cycles), myp=py(curPred.stressAmp);
+  var curPass = target<=0 || curPred.cycles>=target;
+  ctx.fillStyle = curPass ? colors['s3'] : colors['critical'];
+  ctx.beginPath(); ctx.arc(mxp,myp,5,0,Math.PI*2); ctx.fill();
+}
+
 function drawSimSpringChart(convolutions, curD, limit){
   var canvas = document.getElementById('simSpringChart');
   var box = canvas.parentElement;
@@ -4352,8 +4546,8 @@ function drawBellowsProfile(ctx, cssW, geo, colors){
   ctx.setLineDash([]);
 }
 
-function drawBellowsHydroDiagram(wallMm, boreMm, convolutions, stressVal, pass){
-  var canvas = document.getElementById('simDiagramHydro');
+function drawBellowsHydroDiagram(wallMm, boreMm, convolutions, stressVal, pass, canvasId){
+  var canvas = document.getElementById(canvasId||'simDiagramHydro');
   if (!canvas) return;
   var box = canvas.parentElement;
   var cssW = box.clientWidth, cssH = 280;
@@ -4403,6 +4597,63 @@ function drawBellowsHydroDiagram(wallMm, boreMm, convolutions, stressVal, pass){
   ctx.fillText((pass?'✓ ':'✕ ')+stressVal.toFixed(1)+' MPa', crestX+20, crestY-24);
 }
 
+function formatCycles(n){
+  if (n>=1e6) return (n/1e6).toFixed(1)+'M';
+  if (n>=1e3) return (n/1e3).toFixed(1)+'k';
+  return Math.round(n).toString();
+}
+
+function drawBellowsFatigueDiagram(wallMm, boreMm, convolutions, cyclesVal, pass){
+  var canvas = document.getElementById('simDiagramFatigue');
+  if (!canvas) return;
+  var box = canvas.parentElement;
+  var cssW = box.clientWidth, cssH = 280;
+  var dpr = window.devicePixelRatio || 1;
+  canvas.width = cssW*dpr; canvas.height = cssH*dpr;
+  canvas.style.width = cssW+'px'; canvas.style.height = cssH+'px';
+  var ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,cssW,cssH);
+
+  var css = getComputedStyle(document.querySelector('.viz-root'));
+  var colors = {};
+  ['surface-1','ink-1','ink-muted','good','critical'].forEach(function(v){ colors[v]=css.getPropertyValue('--'+v).trim(); });
+
+  var geo = buildBellowsGeometry(cssW, cssH, {wallMm:wallMm, boreMm:boreMm, convolutions:convolutions});
+  drawBellowsProfile(ctx, cssW, geo, colors);
+
+  var dimX = geo.padSide + geo.tangentLen*0.45;
+  dimensionLine(ctx, dimX, geo.centerY-geo.boreHalf, dimX, geo.centerY+geo.boreHalf, colors['ink-1']);
+  ctx.fillStyle = colors['ink-1']; ctx.font='bold 11px ui-monospace,monospace';
+  ctx.textAlign='left'; ctx.textBaseline='middle';
+  ctx.fillText('⌀ '+boreMm.toFixed(0)+' mm', dimX+8, geo.centerY);
+
+  var wdimX = geo.padSide + geo.tangentLen*0.8;
+  dimensionLine(ctx, wdimX, geo.centerY-geo.boreHalf, wdimX, geo.centerY-(geo.boreHalf-geo.wallPx), colors['ink-muted']);
+  ctx.fillStyle = colors['ink-muted']; ctx.font='10px ui-monospace,monospace';
+  ctx.textAlign='left'; ctx.textBaseline='bottom';
+  ctx.fillText('t = '+wallMm.toFixed(2)+' mm', wdimX+6, geo.centerY-geo.boreHalf-2);
+
+  var arrowColor = colors['ink-muted'];
+  for (var k=1;k<geo.n;k+=2){
+    var ax = geo.padSide+geo.tangentLen+geo.foldW*(k+0.5);
+    var ar = outerRadiusAt(geo.tangentLen+geo.foldW*(k+0.5), geo);
+    ctx.strokeStyle = arrowColor; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(ax, geo.centerY-(ar-geo.wallPx-2)); ctx.lineTo(ax, geo.centerY-8); ctx.stroke();
+    arrowHead(ctx, ax, geo.centerY-(ar-geo.wallPx-2), -Math.PI/2, 4, arrowColor);
+  }
+
+  var crestX = geo.padSide+geo.tangentLen+geo.foldW*2.5;
+  var crestR = outerRadiusAt(geo.tangentLen+geo.foldW*2.5, geo);
+  var crestY = geo.centerY - crestR;
+  var calloutColor = pass ? colors['good'] : colors['critical'];
+  ctx.strokeStyle = calloutColor; ctx.lineWidth=1.3;
+  ctx.beginPath(); ctx.moveTo(crestX, crestY-3); ctx.lineTo(crestX+18, crestY-26); ctx.stroke();
+  ctx.fillStyle = calloutColor; ctx.font='bold 11px ui-monospace,monospace';
+  ctx.textAlign='left'; ctx.textBaseline='bottom';
+  ctx.fillText((pass?'✓ ':'✕ ')+formatCycles(cyclesVal)+' cycles', crestX+20, crestY-24);
+}
+
 function drawBellowsSpringDiagram(convolutions, displacementMm, forceVal, pass){
   var canvas = document.getElementById('simDiagramSpring');
   if (!canvas) return;
@@ -4446,7 +4697,7 @@ function drawBellowsSpringDiagram(convolutions, displacementMm, forceVal, pass){
 function openDrawingReport(mode){
   var now = new Date();
   var dwgNo = 'DWG-2026-' + (Math.abs(hashCode(mode+now.toDateString()+Math.random())) % 9000 + 1000);
-  var canvasId = mode==='hydro' ? 'simDiagramHydro' : 'simDiagramSpring';
+  var canvasId = mode==='hydro' ? 'simDiagramHydro' : (mode==='fatigue' ? 'simDiagramFatigue' : 'simDiagramSpring');
   var chartImg = '';
   try {
     var dataUrl = document.getElementById(canvasId).toDataURL('image/png');
@@ -4454,7 +4705,33 @@ function openDrawingReport(mode){
   } catch(e){}
 
   var title, metaPairs, statsRows, summary;
-  if (mode==='hydro'){
+  if (mode==='fatigue'){
+    var pf = parseFloat(document.getElementById('simFatiguePressure').value);
+    var tf = parseFloat(document.getElementById('simFatigueThickness').value);
+    var boref = parseFloat(document.getElementById('simFatigueBore').value);
+    var convf = parseInt(document.getElementById('simFatigueConvolutions').value, 10);
+    var matf = SIM_MATERIALS[document.getElementById('simFatigueMaterial').value];
+    var targetf = parseFloat(document.getElementById('simFatigueTarget').value) || 0;
+    var predf = fatiguePredict(pf, tf, boref, matf);
+    var wcf = computeWeightCost(boref, tf, convf, matf);
+    var passf = targetf<=0 || predf.cycles>=targetf;
+    title = 'Cyclic Fatigue — Bellows Design';
+    metaPairs = [
+      ['Pressure amplitude', pf.toFixed(1)+' bar'], ['Wall thickness', tf.toFixed(2)+' mm'],
+      ['Bore diameter', boref.toFixed(0)+' mm'], ['Convolutions', convf], ['Material', matf.label],
+      ['Target cycle life', targetf>0 ? Math.round(targetf).toLocaleString() : '— not set']
+    ];
+    statsRows = [
+      ['Predicted stress amplitude', predf.stressAmp.toFixed(1)+' MPa'],
+      ['Predicted cycles to failure', predf.cycles>=1e7 ? '>10,000,000' : Math.round(predf.cycles).toLocaleString()],
+      ['Status', targetf<=0 ? 'No target set' : (passf?'PASS — meets target life':'FAIL — fails before target life')],
+      ['Estimated weight', wcf.weightKg.toFixed(2)+' kg'],
+      ['Estimated material cost', '₹'+wcf.costInr.toLocaleString('en-IN',{maximumFractionDigits:0})]
+    ];
+    summary = 'At '+pf.toFixed(1)+' bar pressure amplitude with a '+tf.toFixed(2)+' mm wall and '+boref.toFixed(0)+' mm bore, predicted stress '+
+      'amplitude is '+predf.stressAmp.toFixed(1)+' MPa, giving a predicted life of '+(predf.cycles>=1e7?'over 10,000,000':Math.round(predf.cycles).toLocaleString())+
+      ' cycles'+(targetf>0 ? (' against a target of '+Math.round(targetf).toLocaleString()+' cycles — '+(passf?'meets target.':'fails before target.')) : '.');
+  } else if (mode==='hydro'){
     var p = parseFloat(document.getElementById('simPressure').value);
     var t = parseFloat(document.getElementById('simThickness').value);
     var bore = parseFloat(document.getElementById('simBore').value);
