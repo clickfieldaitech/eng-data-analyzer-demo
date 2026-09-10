@@ -435,6 +435,17 @@
       </div>
       <div class="metarow" id="wsMeta"></div>
 
+      <section class="panel">
+        <div class="panelhead"><h2>Traceability</h2></div>
+        <p class="muted" style="font-size:.78rem;max-width:56ch">Tie this test record to the physical part and
+          raw material — carried into the report and NCR so a failure can be traced back to the exact serial
+          number and heat/lot.</p>
+        <div class="filterrow" style="margin-top:10px">
+          <div class="field"><label>Serial number</label><input class="numinput" type="text" id="traceSerial" placeholder="e.g. MB-EJ-3200-00417" oninput="onTraceabilityChange()"></div>
+          <div class="field"><label>Material heat / lot number</label><input class="numinput" type="text" id="traceHeatLot" placeholder="e.g. HT-2026-0812" oninput="onTraceabilityChange()"></div>
+        </div>
+      </section>
+
       <section class="panel" id="qaVerdictPanel">
         <div class="panelhead"><h2>Overall QA verdict</h2></div>
         <p class="muted" style="font-size:.78rem;max-width:60ch">Rolls up spec limits, process capability,
@@ -655,6 +666,7 @@
 
       <div class="actionrow">
         <button class="actbtn primary" onclick="openReport()">📑 Generate report</button>
+        <button class="actbtn" onclick="openNCR()">⚠ Generate NCR</button>
         <button class="actbtn" onclick="downloadCsv()">⬇ Download CSV</button>
       </div>
 
@@ -764,6 +776,7 @@
 
       <div class="actionrow" id="batchActionsRow" style="display:none">
         <button class="actbtn primary" onclick="openBatchReport()">📑 Generate batch report</button>
+        <button class="actbtn" onclick="exportBatchTableCsv()">⬇ Export table (CSV)</button>
       </div>
     </div>
 
@@ -818,6 +831,14 @@
               <div class="srow"><span>Predicted</span><b class="num" id="simCostOut">—</b></div></div>
           </div>
           <div class="specresult" id="simSpecResult" style="margin-top:14px"></div>
+        </section>
+
+        <section class="panel" style="margin-top:18px">
+          <div class="panelhead"><h2>Column squirm stability check</h2></div>
+          <p class="muted" style="font-size:.84rem;max-width:60ch">A long, low-stiffness bellows under internal
+            pressure can buckle sideways (squirm) well before it reaches its hoop-stress limit — a separate
+            failure mode with its own margin, not covered by the stress check above.</p>
+          <div class="specresult" id="simSquirmResult" style="margin-top:12px"></div>
         </section>
 
         <section class="panel" style="margin-top:18px">
@@ -1324,7 +1345,12 @@ var QUESTIONS = {
 
 var state = { key:null, cfg:null, rows:[], filtered:[], xKey:'', yKeys:[], chartType:'line',
   visibleSeries:[], normalize:false, trend:false, compareKey:'', fitType:'none', showOutliers:false,
-  showSpectrogram:false, showWaterfall:false };
+  showSpectrogram:false, showWaterfall:false, traceability:{serial:'', heatLot:''} };
+
+function onTraceabilityChange(){
+  state.traceability.serial = document.getElementById('traceSerial').value.trim();
+  state.traceability.heatLot = document.getElementById('traceHeatLot').value.trim();
+}
 
 /* ---- small math library: regression, R², cross-correlation ---- */
 function solveLinear(A, b){
@@ -1737,6 +1763,9 @@ function initWorkspace(key){
   document.getElementById('specUpper').value = '';
   document.getElementById('interpX').value = '';
   document.getElementById('interpResult').innerHTML = '';
+  document.getElementById('traceSerial').value = '';
+  document.getElementById('traceHeatLot').value = '';
+  state.traceability = {serial:'', heatLot:''};
   document.getElementById('allowableLimit').value = '';
   document.getElementById('safetyResult').innerHTML = '';
   document.getElementById('safetyGaugeBox').style.display = 'none';
@@ -3365,6 +3394,8 @@ function openReport(){
   var now = new Date();
 
   var metaPairs = Object.keys(cfg.meta).map(function(k){ return [k.replace(/_/g,' '), cfg.meta[k]]; });
+  if (state.traceability.serial) metaPairs.push(['Serial number', state.traceability.serial]);
+  if (state.traceability.heatLot) metaPairs.push(['Material heat/lot', state.traceability.heatLot]);
   metaPairs.push(['Source file', cfg.filename]);
   metaPairs.push(['Rows in range', rows.length.toLocaleString() + ' of ' + state.rows.length.toLocaleString()]);
   metaPairs.push(['Report generated', now.toLocaleString()]);
@@ -3471,6 +3502,80 @@ function openReport(){
   document.getElementById('reportModal').classList.add('on');
 }
 function closeReport(){ document.getElementById('reportModal').classList.remove('on'); }
+
+function openNCR(){
+  var cfg = state.cfg;
+  var now = new Date();
+  var ncrNo = 'NCR-2026-' + (Math.abs(hashCode(cfg.filename+now.toISOString())) % 9000 + 1000);
+
+  var metaPairs = [
+    ['Part / test file', cfg.filename],
+    ['Bellows model', (cfg.meta && cfg.meta.Bellows_Model) || '—'],
+    ['Material', (cfg.meta && cfg.meta.Material) || '—'],
+    ['Batch', (cfg.meta && cfg.meta.Batch) || '—'],
+    ['Serial number', state.traceability.serial || '— not recorded'],
+    ['Material heat/lot', state.traceability.heatLot || '— not recorded'],
+    ['Date raised', now.toLocaleDateString()]
+  ];
+  var metaHtml = metaPairs.map(function(p){ return '<div class="mrow"><span>'+p[0]+'</span><span>'+p[1]+'</span></div>'; }).join('');
+
+  var failedChecks = (state._qaVerdict ? state._qaVerdict.checks : []).filter(function(c){ return c.status==='fail'; });
+  var warnChecks = (state._qaVerdict ? state._qaVerdict.checks : []).filter(function(c){ return c.status==='warn'; });
+
+  var resultTextById = {
+    'Spec limits': 'specResult', 'Safety factor': 'safetyResult',
+    'Hold-phase leak check': 'holdCheckResult', 'Fatigue life projection': 'fatigueLifeResult',
+    'Spring linearity & hysteresis': 'springCheckResult'
+  };
+  function detailFor(label){
+    if (label==='Process capability (Cpk)'){
+      var grid = document.getElementById('capabilityGrid');
+      return grid ? grid.innerText.replace(/\s+/g,' ').trim() : '';
+    }
+    var elId = resultTextById[label];
+    if (!elId) return '';
+    var el = document.getElementById(elId);
+    if (!el) return '';
+    var txt = el.innerText || '';
+    return txt.replace(/^[✓✕⚠]\s*[A-Z ]+\n?/,'').trim();
+  }
+
+  var ncFindings;
+  if (failedChecks.length || warnChecks.length){
+    ncFindings = '<ul style="margin:0;padding-left:20px">' +
+      failedChecks.map(function(c){ return '<li><b>'+c.label+' — FAIL.</b> '+detailFor(c.label)+'</li>'; }).join('') +
+      warnChecks.map(function(c){ return '<li><b>'+c.label+' — REVIEW.</b> '+detailFor(c.label)+'</li>'; }).join('') +
+      '</ul>';
+  } else {
+    ncFindings = '<p class="rsummary">No failing or borderline checks were flagged on this test record at the '+
+      'time this NCR was generated. Use this document to record a concern observed outside the automated checks '+
+      '(visual defect, dimensional issue, process deviation, etc.) — describe it in the notes section below.</p>';
+  }
+
+  document.getElementById('reportBody').innerHTML =
+    '<div class="rdoc">'+
+      '<div class="rdochead">'+
+        '<div><div class="rtitle">Non-Conformance Report</div><div class="rsub">Sheet: '+cfg.sheet+'</div></div>'+
+        '<div class="rid">'+ncrNo+'<br>'+now.toLocaleDateString()+'</div>'+
+      '</div>'+
+      '<div class="rmetagrid">'+metaHtml+'</div>'+
+      '<div class="rsectitle">Nonconformance — automated findings</div>'+
+      ncFindings+
+      '<div class="rsectitle">Description (engineer to complete)</div>'+
+      '<p class="soft" style="min-height:44px;border-bottom:1px dotted var(--border)">— describe the nonconformance in detail —</p>'+
+      '<div class="rsectitle">Disposition</div>'+
+      '<p class="soft" style="min-height:24px">☐ Use as is &nbsp;&nbsp; ☐ Rework &nbsp;&nbsp; ☐ Scrap &nbsp;&nbsp; ☐ Return to supplier</p>'+
+      '<div class="rsectitle">Root cause / corrective action</div>'+
+      '<p class="soft" style="min-height:44px;border-bottom:1px dotted var(--border)">— add root cause and corrective action here —</p>'+
+      '<div class="signrow">'+
+        '<div class="signbox">Initiated by</div>'+
+        '<div class="signbox">QA reviewed by</div>'+
+        '<div class="signbox">Disposition approved by</div>'+
+      '</div>'+
+      '<div class="rfoot"><span>Generated automatically by MB Engineering Data Analyzer</span><span>'+ncrNo+'</span></div>'+
+    '</div>';
+  document.getElementById('reportModal').classList.add('on');
+}
 
 /* ---- batch QA dashboard ---- */
 var batchFiles = [];
@@ -3633,6 +3738,45 @@ function batchGroupStats(){
   var groupMean = avgs.reduce(function(a,b){return a+b;},0)/avgs.length;
   var groupStd = Math.sqrt(avgs.reduce(function(a,b){return a+Math.pow(b-groupMean,2);},0)/avgs.length) || 0;
   return {withStats:withStats, groupMean:groupMean, groupStd:groupStd};
+}
+
+function exportBatchTableCsv(){
+  if (!batchFiles.length) return;
+  var g = batchGroupStats();
+  var lowerRaw = document.getElementById('batchSpecLower').value;
+  var upperRaw = document.getElementById('batchSpecUpper').value;
+  var lower = lowerRaw!=='' ? parseFloat(lowerRaw) : null;
+  var upper = upperRaw!=='' ? parseFloat(upperRaw) : null;
+  var showSpec = lower!==null || upper!==null;
+
+  var header = ['File','Batch','Variable','Max','Min','Average','Std Dev','Drift','Type check','Type check detail'];
+  if (showSpec) header.push('Spec');
+  var lines = [header.join(',')];
+
+  g.withStats.forEach(function(w){
+    var d = w.file.decimals!=null ? w.file.decimals : 2;
+    var drift = g.groupStd>0 && Math.abs(w.stats.avg-g.groupMean) > 1.5*g.groupStd;
+    var tc = computeTypeCheck(w.file);
+    var row = [
+      '"'+w.file.filename+'"', '"'+w.file.batch+'"',
+      '"'+w.file.primaryLabel+(w.file.primaryUnit?' ('+w.file.primaryUnit+')':'')+'"',
+      w.stats.max.toFixed(d), w.stats.min.toFixed(d), w.stats.avg.toFixed(d), w.stats.std.toFixed(d),
+      drift?'DRIFT':'OK',
+      tc ? (tc.ok===null?tc.label:(tc.ok?'PASS: ':'FAIL: ')+tc.label) : '',
+      tc ? '"'+tc.text+'"' : ''
+    ];
+    if (showSpec){
+      var violations = w.file.pts.filter(function(p){ return (lower!==null&&p.y<lower)||(upper!==null&&p.y>upper); });
+      row.push(violations.length===0 ? 'PASS' : 'FAIL');
+    }
+    lines.push(row.join(','));
+  });
+
+  var blob = new Blob([lines.join('\n')], {type:'text/csv'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'batch_summary_'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();
 }
 
 function renderBatchAll(){
@@ -4141,6 +4285,12 @@ function hydroPredict(pressureBar, wallMm, boreMm){
   return {stress:stress, disp:disp};
 }
 
+function squirmPredict(wallMm, boreMm, convolutions){
+  var C = 4793;
+  var pcrBar = C * Math.pow(wallMm,1.5) / (Math.pow(boreMm,0.5) * Math.pow(convolutions,1.2));
+  return pcrBar;
+}
+
 function updateSimHydro(){
   var p = parseFloat(document.getElementById('simPressure').value);
   var t = parseFloat(document.getElementById('simThickness').value);
@@ -4163,6 +4313,17 @@ function updateSimHydro(){
   document.getElementById('simSpecResult').innerHTML =
     '<span class="badge '+(pass?'pass':'fail')+'">'+(pass?'✓ WITHIN LIMIT':'✕ EXCEEDS LIMIT')+'</span>'+
     '<span class="detail">'+mat.label+' allowable: '+mat.allowable+' MPa — margin '+(margin>=0?'+':'')+margin.toFixed(1)+' MPa</span>';
+
+  var pcr = squirmPredict(t, bore, convolutions);
+  var squirmMargin = pcr / p;
+  var squirmCls = squirmMargin>=1.5 ? 'pass' : (squirmMargin>=1 ? 'warn' : 'fail');
+  var squirmBadge = squirmMargin>=1.5 ? '✓ COMFORTABLE MARGIN' : (squirmMargin>=1 ? '⚠ THIN MARGIN' : '✕ SQUIRM RISK');
+  document.getElementById('simSquirmResult').innerHTML =
+    '<span class="badge '+squirmCls+'">'+squirmBadge+'</span>'+
+    '<span class="detail">Estimated critical squirm pressure ≈ <b>'+pcr.toFixed(1)+' bar</b> at '+convolutions+
+    ' convolutions and '+t.toFixed(2)+' mm wall — operating at '+p.toFixed(1)+' bar gives a margin of <b>'+
+    squirmMargin.toFixed(2)+'×</b>'+(squirmMargin<1?' (already beyond the estimated critical pressure).':'.')+'</span>';
+
   drawSimHydroChart(p, t, bore, mat);
   drawBellowsHydroDiagram(t, bore, convolutions, pred.stress, pass);
   runHydroOptimizer();
@@ -4740,6 +4901,8 @@ function openDrawingReport(mode){
     var pred = hydroPredict(p, t, bore);
     var wc = computeWeightCost(bore, t, conv, mat);
     var pass = pred.stress <= mat.allowable;
+    var pcrDwg = squirmPredict(t, bore, conv);
+    var squirmPassDwg = pcrDwg >= p;
     title = 'Hydrostatic Pressure — Bellows Design';
     metaPairs = [
       ['Design pressure', p.toFixed(1)+' bar'], ['Wall thickness', t.toFixed(2)+' mm'],
@@ -4749,6 +4912,8 @@ function openDrawingReport(mode){
       ['Predicted hoop stress', pred.stress.toFixed(1)+' MPa'], ['Allowable stress', mat.allowable+' MPa'],
       ['Predicted axial displacement', pred.disp.toFixed(3)+' mm'],
       ['Status', pass?'PASS — within limit':'FAIL — exceeds limit'],
+      ['Estimated critical squirm pressure', pcrDwg.toFixed(1)+' bar'],
+      ['Squirm status', squirmPassDwg?'PASS — margin '+(pcrDwg/p).toFixed(2)+'×':'FAIL — below critical squirm pressure'],
       ['Estimated weight', wc.weightKg.toFixed(2)+' kg'],
       ['Estimated material cost', '₹'+wc.costInr.toLocaleString('en-IN',{maximumFractionDigits:0})]
     ];
