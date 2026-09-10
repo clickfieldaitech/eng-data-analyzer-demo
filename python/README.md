@@ -70,3 +70,16 @@ print(check.status, check.detail)
 
 Everything here is illustrative/engineering-estimate math, same as the web
 app — not a certified EJMA/ASME calculation.
+
+## Tests
+
+```bash
+pytest test_bellows_analysis.py -v
+```
+
+Every function is checked against synthetic data with a known, hand-checkable
+answer rather than just "did it crash" — a sine wave for FFT frequency
+recovery, an exact line/quadratic/exponential for curve fitting, a
+known-shift signal for cross-correlation, a manually-solved crossing point
+for fatigue life projection, a known rectangular gap for hysteresis work,
+and formula cross-checks for SPC/Cp/Cpk. 28 tests, all passing.
