@@ -325,6 +325,7 @@
 
 <div class="viz-root">
   <button class="theme" style="position:fixed;top:14px;right:14px;z-index:9" onclick="var r=document.documentElement,d=r.getAttribute('data-theme')==='dark',next=d?'light':'dark';r.setAttribute('data-theme',next);try{localStorage.setItem('mbTheme',next);}catch(e){}">◐ theme</button>
+  <button class="theme" style="position:fixed;top:14px;right:96px;z-index:9" id="unitsToggleBtn" onclick="toggleUnits()" title="Converts the Data preview and Statistics panels only — spec limits, thresholds, and charts stay in the units the test rig logged in.">⇄ Units: Metric</button>
 
   <div class="topbar">
     <span class="brandmark"></span>
@@ -1805,11 +1806,54 @@ function initWorkspace(key){
   onControlsChange();
 }
 
+var UNIT_CONV = {
+  'bar': {imp:'psi', factor:14.5038, deltaFactor:14.5038, decimals:1},
+  'mm': {imp:'in', factor:0.0393701, deltaFactor:0.0393701, decimals:4},
+  'MPa': {imp:'ksi', factor:0.145038, deltaFactor:0.145038, decimals:2},
+  'N': {imp:'lbf', factor:0.224809, deltaFactor:0.224809, decimals:1},
+  'N/mm': {imp:'lbf/in', factor:5.71015, deltaFactor:5.71015, decimals:1},
+  '°C': {imp:'°F', toAbs:function(c){return c*9/5+32;}, deltaFactor:1.8, decimals:1}
+};
+var unitSystem = (function(){ try{ return localStorage.getItem('mbUnits')||'metric'; }catch(e){ return 'metric'; } })();
+(function(){
+  var btn = document.getElementById('unitsToggleBtn');
+  if (btn) btn.textContent = unitSystem==='imperial' ? '⇄ Units: Imperial' : '⇄ Units: Metric';
+})();
+function dispUnit(unit){
+  if (unitSystem!=='imperial' || !unit) return unit;
+  var c = UNIT_CONV[unit];
+  return c ? c.imp : unit;
+}
+function dispAbs(value, unit){
+  if (unitSystem!=='imperial' || typeof value!=='number' || !unit) return value;
+  var c = UNIT_CONV[unit];
+  if (!c) return value;
+  return c.toAbs ? c.toAbs(value) : value*c.factor;
+}
+function dispDelta(value, unit){
+  if (unitSystem!=='imperial' || typeof value!=='number' || !unit) return value;
+  var c = UNIT_CONV[unit];
+  if (!c) return value;
+  return value*c.deltaFactor;
+}
+function dispDec(unit, fallback){
+  if (unitSystem!=='imperial' || !unit) return fallback;
+  var c = UNIT_CONV[unit];
+  return c ? c.decimals : fallback;
+}
+function toggleUnits(){
+  unitSystem = unitSystem==='imperial' ? 'metric' : 'imperial';
+  try{ localStorage.setItem('mbUnits', unitSystem); }catch(e){}
+  var btn = document.getElementById('unitsToggleBtn');
+  if (btn) btn.textContent = unitSystem==='imperial' ? '⇄ Units: Imperial' : '⇄ Units: Metric';
+  if (state.key){ renderPreview(); renderStats(); }
+}
+
 function renderPreview(){
   var cfg = state.cfg, rows = state.rows.slice(0,15);
   var cols = cfg.columns.slice();
   if (state.key==='fatigue'||state.key==='fatigue2') cols = cols.concat([{key:'Status',label:'Status',decimals:null}]);
-  var thead = '<thead><tr>' + cols.map(function(c){return '<th>'+c.label+(c.unit?' ('+c.unit+')':'')+'</th>';}).join('') + '</tr></thead>';
+  var thead = '<thead><tr>' + cols.map(function(c){return '<th>'+c.label+(c.unit?' ('+dispUnit(c.unit)+')':'')+'</th>';}).join('') + '</tr></thead>';
   var tbody = '<tbody>' + rows.map(function(r){
     return '<tr>' + cols.map(function(c){
       var v = r[c.key];
@@ -1817,7 +1861,9 @@ function renderPreview(){
         var cls = v==='OK'?'status-ok':(v==='Degrading'?'status-warn':'status-crit');
         return '<td class="'+cls+'">'+v+'</td>';
       }
-      return '<td class="num">'+(v==null?'—':(c.decimals!=null && typeof v==='number'?v.toFixed(c.decimals):v))+'</td>';
+      var dv = dispAbs(v, c.unit);
+      var dd = dispDec(c.unit, c.decimals);
+      return '<td class="num">'+(dv==null?'—':(dd!=null && typeof dv==='number'?dv.toFixed(dd):dv))+'</td>';
     }).join('') + '</tr>';
   }).join('') + '</tbody>';
   document.getElementById('previewTable').innerHTML = thead+tbody;
@@ -2682,17 +2728,17 @@ function renderStats(){
     var max = Math.max.apply(null, vals), min = Math.min.apply(null, vals);
     var p5 = percentileOf(sorted,5), p95 = percentileOf(sorted,95), p99 = percentileOf(sorted,99);
     var col = colFor(k);
-    var d = col.decimals!=null ? col.decimals : 2;
+    var d = dispDec(col.unit, col.decimals!=null ? col.decimals : 2);
     return '<div class="statcard"><div class="shead"><span class="sw" style="background:var(--'+SERIES_COLORS[i]+')"></span>'+
-      '<span class="sname">'+col.label+(col.unit?' ('+col.unit+')':'')+'</span></div>'+
-      '<div class="srow"><span>Max</span><b class="num">'+max.toFixed(d)+'</b></div>'+
-      '<div class="srow"><span>Min</span><b class="num">'+min.toFixed(d)+'</b></div>'+
-      '<div class="srow"><span>Average</span><b class="num">'+mean.toFixed(d)+'</b></div>'+
-      '<div class="srow"><span>Median</span><b class="num">'+median.toFixed(d)+'</b></div>'+
-      '<div class="srow"><span>Std. deviation</span><b class="num">'+std.toFixed(d)+'</b></div>'+
-      '<div class="srow"><span>5th percentile</span><b class="num">'+p5.toFixed(d)+'</b></div>'+
-      '<div class="srow"><span>95th percentile</span><b class="num">'+p95.toFixed(d)+'</b></div>'+
-      '<div class="srow"><span>99th percentile</span><b class="num">'+p99.toFixed(d)+'</b></div></div>';
+      '<span class="sname">'+col.label+(col.unit?' ('+dispUnit(col.unit)+')':'')+'</span></div>'+
+      '<div class="srow"><span>Max</span><b class="num">'+dispAbs(max,col.unit).toFixed(d)+'</b></div>'+
+      '<div class="srow"><span>Min</span><b class="num">'+dispAbs(min,col.unit).toFixed(d)+'</b></div>'+
+      '<div class="srow"><span>Average</span><b class="num">'+dispAbs(mean,col.unit).toFixed(d)+'</b></div>'+
+      '<div class="srow"><span>Median</span><b class="num">'+dispAbs(median,col.unit).toFixed(d)+'</b></div>'+
+      '<div class="srow"><span>Std. deviation</span><b class="num">'+dispDelta(std,col.unit).toFixed(d)+'</b></div>'+
+      '<div class="srow"><span>5th percentile</span><b class="num">'+dispAbs(p5,col.unit).toFixed(d)+'</b></div>'+
+      '<div class="srow"><span>95th percentile</span><b class="num">'+dispAbs(p95,col.unit).toFixed(d)+'</b></div>'+
+      '<div class="srow"><span>99th percentile</span><b class="num">'+dispAbs(p99,col.unit).toFixed(d)+'</b></div></div>';
   }).join('');
 }
 
